@@ -14,6 +14,8 @@ import Square from "lucide-react/dist/esm/icons/square.js";
 import Terminal from "lucide-react/dist/esm/icons/terminal.js";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2.js";
 import X from "lucide-react/dist/esm/icons/x.js";
+import Eye from "lucide-react/dist/esm/icons/eye.js";
+import EyeOff from "lucide-react/dist/esm/icons/eye-off.js";
 import Logo from "./assets/logo.png";
 import { Ban, SquareChevronRight } from "lucide-react";
 
@@ -66,6 +68,7 @@ const formatUptime = (since: number | null) => {
 function Login({ onLogin }: { onLogin: () => void }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
@@ -87,54 +90,69 @@ function Login({ onLogin }: { onLogin: () => void }) {
     }
   }
   return (
-    <main className="grid-bg min-h-screen grid place-items-center p-6">
-      <section className="glass w-full max-w-md rounded-3xl border border-slate-200 p-8 shadow-xl shadow-slate-200/60">
-        <div className="mb-8 flex items-center gap-3">
-          <div className="flex h-14 w-32 items-center justify-center items-center p-4">
+    <main className="login-background">
+      <section className="login-card" aria-labelledby="login-title">
+        <div className="mb-6 flex items-center">
+          <div className="flex h-12 w-28 items-center justify-start">
             <img
               src={Logo}
               alt="KPMG"
               width={683}
               height={291}
-              className="h-auto w-full"
+              className="block h-full w-full object-contain object-left"
               decoding="async"
             />
           </div>
         </div>
-        <h2 className="text-3xl font-semibold tracking-tight">
+        <h2 id="login-title" className="text-2xl font-semibold tracking-tight text-[#06245e]">
           Acesse o painel
         </h2>
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-2 text-sm leading-6 text-slate-500">
           Realizar login para acessar o monitoramento de processos PM2.
         </p>
         <form onSubmit={submit} className="mt-8 space-y-4">
-          <label className="block text-sm text-slate-600">
+          <label className="block text-sm font-medium text-slate-700">
             Usuário
             <input
               name="username"
               autoComplete="username"
+              placeholder="Digite seu usuário"
               required
-              className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-blue-500"
+              className="login-input mt-2"
             />
           </label>
-          <label className="block text-sm text-slate-600">
-            Senha
-            <input
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-blue-500"
-            />
-          </label>
+          <div>
+            <label htmlFor="login-password" className="block text-sm font-medium text-slate-700">Senha</label>
+            <div className="relative mt-2">
+              <input
+                id="login-password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                placeholder="Digite sua senha"
+                required
+                className="login-input login-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((visible) => !visible)}
+                aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                aria-pressed={showPassword}
+                aria-controls="login-password"
+                className="login-password-toggle"
+              >
+                {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+              </button>
+            </div>
+          </div>
           {error && (
-            <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </p>
           )}
           <button
             disabled={loading}
-            className="w-full rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+            className="h-12 w-full rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition-colors duration-150 hover:bg-blue-700 disabled:opacity-50"
           >
             {loading ? "Entrando…" : "Entrar"}
           </button>
