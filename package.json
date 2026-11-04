@@ -1,0 +1,22 @@
+{
+  "name": "ati-dev-cockpit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Painel web para monitorar e operar processos PM2 no Windows",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n API,WEB -c cyan,magenta \"npm run dev --workspace @ati-dev-cockpit/backend\" \"npm run dev --workspace @ati-dev-cockpit/frontend\"",
+    "build": "npm run build --workspace @ati-dev-cockpit/frontend && npm run build --workspace @ati-dev-cockpit/backend",
+    "start": "npm run start --workspace @ati-dev-cockpit/backend",
+    "start:prod": "npm run start:prod --workspace @ati-dev-cockpit/backend",
+    "typecheck": "npm run typecheck --workspace @ati-dev-cockpit/frontend && npm run typecheck --workspace @ati-dev-cockpit/backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
