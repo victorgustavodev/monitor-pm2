@@ -18,6 +18,8 @@ import Eye from "lucide-react/dist/esm/icons/eye.js";
 import EyeOff from "lucide-react/dist/esm/icons/eye-off.js";
 import Logo from "./assets/logo.png";
 import { Ban, SquareChevronRight } from "lucide-react";
+import { api, ApiError } from "./api";
+import { Management } from "./Management";
 
 type Process = {
   id: number;
@@ -30,25 +32,10 @@ type Process = {
   restarts: number;
   mode: string;
   version: string | null;
+  ports: number[];
+  portSource: "listening" | "configured" | null;
 };
 type Action = "start" | "restart" | "stop" | "delete";
-
-async function api<T>(url: string, options?: RequestInit): Promise<T> {
-  const headers = new Headers(options?.headers);
-  if (options?.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.message ?? "Não foi possível concluir a operação.");
-  }
-  if (response.status === 204) return undefined as T;
-  return response.json();
-}
 
 const formatMemory = (bytes: number) =>
   `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -65,10 +52,11 @@ const formatUptime = (since: number | null) => {
       : `${minutes}m`;
 };
 
-function Login({ onLogin }: { onLogin: () => void }) {
+function Login({ onLogin, serverError }: { onLogin: () => Promise<void>; serverError: string }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const visibleError = error || serverError;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
@@ -82,7 +70,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
           password: data.get("password"),
         }),
       });
-      onLogin();
+      await onLogin();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Falha no login");
     } finally {
@@ -92,71 +80,72 @@ function Login({ onLogin }: { onLogin: () => void }) {
   return (
     <main className="login-background">
       <section className="login-card" aria-labelledby="login-title">
-        <div className="mb-6 flex items-center">
-          <div className="flex h-12 w-28 items-center justify-start">
-            <img
-              src={Logo}
-              alt="KPMG"
-              width={683}
-              height={291}
-              className="block h-full w-full object-contain object-left"
-              decoding="async"
-            />
-          </div>
+        <div className="login-brand">
+          <img
+            src={Logo}
+            alt="KPMG"
+            width={214}
+            height={113}
+            className="brand-logo"
+            decoding="async"
+          />
         </div>
-        <h2 id="login-title" className="text-2xl font-semibold tracking-tight text-[#06245e]">
-          Acesse o painel
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          Realizar login para acessar o monitoramento de processos PM2.
-        </p>
-        <form onSubmit={submit} className="mt-8 space-y-4">
-          <label className="block text-sm font-medium text-slate-700">
-            Usuário
-            <input
-              name="username"
-              autoComplete="username"
-              placeholder="Digite seu usuário"
-              required
-              className="login-input mt-2"
-            />
-          </label>
-          <div>
-            <label htmlFor="login-password" className="block text-sm font-medium text-slate-700">Senha</label>
-            <div className="relative mt-2">
+        <div className="login-content">
+          <h2 id="login-title" className="text-2xl font-semibold tracking-tight text-heading">
+            Acesse o painel
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            Realizar login para acessar o monitoramento de processos PM2.
+          </p>
+          <form onSubmit={submit} className="mt-8 space-y-4">
+            <label className="block text-sm font-medium text-content">
+              Usuário
               <input
-                id="login-password"
-                name="password"
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                placeholder="Digite sua senha"
+                name="username"
+                autoComplete="username"
+                placeholder="Digite seu usuário"
                 required
-                className="login-input login-password"
+                className="login-input mt-2"
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword((visible) => !visible)}
-                aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
-                aria-pressed={showPassword}
-                aria-controls="login-password"
-                className="login-password-toggle"
-              >
-                {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
-              </button>
+            </label>
+            <div>
+              <label htmlFor="login-password" className="block text-sm font-medium text-content">Senha</label>
+              <div className="relative mt-2">
+                <input
+                  id="login-password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  placeholder="Digite sua senha"
+                  required
+                  className="login-input login-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                  aria-pressed={showPassword}
+                  aria-controls="login-password"
+                  className="login-password-toggle"
+                >
+                  {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+                </button>
+              </div>
             </div>
-          </div>
-          {error && (
-            <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </p>
-          )}
-          <button
-            disabled={loading}
-            className="h-12 w-full rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition-colors duration-150 hover:bg-blue-700 disabled:opacity-50"
-          >
-            {loading ? "Entrando…" : "Entrar"}
-          </button>
-        </form>
+            {visibleError && (
+              <div role="alert" aria-atomic="true" className="rounded-lg border border-danger-line bg-danger-surface px-4 py-3 text-sm text-danger">
+                <p className="font-semibold">Não foi possível acessar o painel</p>
+                <p className="mt-1 break-words leading-5">{visibleError}</p>
+              </div>
+            )}
+            <button
+              disabled={loading}
+              className="h-12 w-full rounded-lg bg-action px-4 text-sm font-semibold text-on-action transition-colors duration-150 hover:bg-action-hover disabled:opacity-50"
+            >
+              {loading ? "Entrando…" : "Entrar"}
+            </button>
+          </form>
+        </div>
       </section>
     </main>
   );
@@ -179,6 +168,7 @@ export function App() {
     null,
   );
 
+  const sessionExpired = useCallback(() => setAuthenticated(false), []);
   const load = useCallback(async () => {
     try {
       setLoading(true);
@@ -187,8 +177,8 @@ export function App() {
       setAuthenticated(true);
       setError("");
     } catch (reason) {
-      if ((reason as Error).message.includes("Sessão")) setAuthenticated(false);
-      else setError((reason as Error).message);
+      if (reason instanceof ApiError && reason.status === 401) setAuthenticated(false);
+      setError((reason as Error).message);
     } finally {
       setLoading(false);
     }
@@ -196,7 +186,10 @@ export function App() {
   useEffect(() => {
     api("/api/auth/me")
       .then(() => load())
-      .catch(() => {
+      .catch((reason: unknown) => {
+        if (!(reason instanceof ApiError && reason.status === 401)) {
+          setError(reason instanceof Error ? reason.message : "Falha ao verificar sua sessão.");
+        }
         setAuthenticated(false);
         setLoading(false);
       });
@@ -289,25 +282,27 @@ export function App() {
 
   if (authenticated === null)
     return (
-      <div className="grid min-h-screen place-items-center bg-[#f4f6fa] text-blue-600">
+      <div className="grid min-h-screen place-items-center bg-canvas text-accent">
         <RefreshCw className="animate-spin" />
       </div>
     );
-  if (!authenticated) return <Login onLogin={load} />;
+  if (!authenticated) return <Login onLogin={load} serverError={error} />;
   return (
-    <main className="grid-bg min-h-screen bg-[#f4f6fa] text-[#465472]">
-      <header className="border-b border-[#06245e] bg-[#06245e] text-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4">
+    <main className="grid-bg min-h-screen bg-canvas text-content">
+      <header className="brand-header text-on-brand">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-1.5 shadow-sm">
+            <div className="h-16 w-28 shrink-0">
               <img
                 src={Logo}
                 alt="KPMG"
-                className="block h-full w-full object-cover"
+                width={214}
+                height={113}
+                className="brand-logo"
                 decoding="async"
               />
             </div>
-            <div className="border-l border-white/25 pl-3">
+            <div className="border-l border-shell-line pl-3">
               <strong className="text-sm tracking-tight">MONITOR PM2</strong>
             </div>
           </div>
@@ -315,7 +310,7 @@ export function App() {
             <button
               onClick={logout}
               title="Sair"
-              className="rounded-lg p-2 text-blue-100 hover:bg-white/10 hover:text-white"
+              className="rounded-lg p-2 text-shell-muted hover:bg-shell-hover hover:text-on-brand"
             >
               <LogOut size={18} />
             </button>
@@ -325,7 +320,7 @@ export function App() {
       <div className="mx-auto max-w-7xl p-5 sm:p-8">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
-            <p className="text-sm font-medium text-blue-600">VISÃO GERAL</p>
+            <p className="text-sm font-medium text-accent">VISÃO GERAL</p>
             <h1 className="mt-1 text-3xl font-semibold tracking-tight">
               Processos da VM
             </h1>
@@ -333,7 +328,7 @@ export function App() {
           <button
             onClick={load}
             disabled={loading}
-            className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-[#315789] hover:bg-blue-50"
+            className="flex items-center justify-center gap-2 rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-action-secondary hover:bg-hover"
           >
             <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
             Atualizar
@@ -348,18 +343,18 @@ export function App() {
           ].map(([label, value, Icon]) => (
             <div
               key={String(label)}
-              className="glass rounded-2xl border border-slate-200 p-5"
+              className="glass rounded-2xl border border-line p-5"
             >
-              <div className="flex items-center justify-between text-sm text-slate-500">
+              <div className="flex items-center justify-between text-sm text-muted">
                 <span>{label as string}</span>
-                <Icon size={18} className="text-blue-600" />
+                <Icon size={18} className="text-accent" />
               </div>
               <p className="mt-3 text-2xl font-semibold">{value as string}</p>
             </div>
           ))}
         </section>
         {error && (
-          <div className="mt-5 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="mt-5 flex items-center justify-between rounded-xl border border-danger-line bg-danger-surface px-4 py-3 text-sm text-danger">
             <span>{error}</span>
             <button onClick={() => setError("")}>
               <X size={16} />
@@ -367,37 +362,39 @@ export function App() {
           </div>
         )}
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-          {notice && <p role="status" className="text-sm text-emerald-700">{notice}</p>}
+          {notice && <p role="status" className="text-sm text-success">{notice}</p>}
           <button
             type="button"
             onClick={() => { setProcessError(""); processDialog.current?.showModal(); }}
-            className="ml-auto rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+            className="ml-auto rounded-lg bg-action px-4 py-2.5 text-sm font-semibold text-on-action hover:bg-action-hover"
           >
             Adicionar novo processo
           </button>
         </div>
-        <section className="glass mt-6 overflow-hidden rounded-2xl border border-slate-200">
-          <div className="flex flex-col gap-4 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <Management onStarted={load} onSessionExpired={sessionExpired} />
+        <section className="glass mt-6 overflow-hidden rounded-2xl border border-line">
+          <div className="flex flex-col gap-4 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-medium">Aplicações</h2>
             <label className="relative">
               <Search
-                className="absolute left-3 top-2.5 text-slate-500"
+                className="absolute left-3 top-2.5 text-muted"
                 size={16}
               />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Buscar processo"
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 sm:w-64"
+                className="w-full rounded-lg border border-line bg-canvas py-2 pl-9 pr-3 text-sm outline-none focus:border-focus sm:w-64"
               />
             </label>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+            <table className="w-full min-w-[1000px] text-left text-sm">
+              <thead className="bg-canvas text-xs uppercase tracking-wider text-muted">
                 <tr>
                   <th className="px-5 py-3">Aplicação</th>
                   <th>Status</th>
+                  <th>Porta</th>
                   <th>CPU</th>
                   <th>Memória</th>
                   <th>Uptime</th>
@@ -409,22 +406,28 @@ export function App() {
                 {filtered.map((process) => (
                   <tr
                     key={process.id}
-                    className="border-t border-slate-200/70 transition hover:bg-blue-50/60"
+                    className="border-t border-line/70 transition hover:bg-hover/60"
                   >
                     <td className="px-5 py-4">
                       <div className="font-medium">{process.name}</div>
-                      <div className="mt-0.5 text-xs text-slate-500">
+                      <div className="mt-0.5 text-xs text-muted">
                         id {process.id} · PID {process.pid || "—"} ·{" "}
                         {process.mode}
                       </div>
                     </td>
                     <td>
                       <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${process.status === "online" ? "bg-[#d8f5e8] text-[#087a56]" : process.status === "stopped" ? "bg-slate-100 text-slate-600" : "bg-[#fff0c2] text-[#936500]"}`}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${process.status === "online" ? "bg-success-surface text-success" : process.status === "stopped" ? "bg-subtle text-muted" : "bg-warning-surface text-warning"}`}
                       >
                         <span className="h-1.5 w-1.5 rounded-full bg-current" />
                         {process.status}
                       </span>
+                    </td>
+                    <td>
+                      <span className="font-mono tabular-nums" title={process.portSource === "listening" ? "Portas TCP em escuta neste processo ou em seus subprocessos" : process.portSource === "configured" ? "Porta informada na configuração; não confirmada em escuta" : "Porta não identificada"}>
+                        {process.ports?.length ? process.ports.join(", ") : "—"}
+                      </span>
+                      {process.portSource === "configured" && <p className="mt-0.5 text-xs text-muted">Configurada</p>}
                     </td>
                     <td>{process.cpu.toFixed(1)}%</td>
                     <td>{formatMemory(process.memory)}</td>
@@ -436,7 +439,7 @@ export function App() {
                           <button
                             onClick={() => act(process, "stop")}
                             title="Parar"
-                            className="rounded-lg p-2 text-slate-500 hover:bg-amber-50 hover:text-amber-700"
+                            className="rounded-lg p-2 text-muted hover:bg-warning-surface hover:text-warning"
                           >
                             <Ban size={16} />
                           </button>
@@ -444,7 +447,7 @@ export function App() {
                           <button
                             onClick={() => act(process, "start")}
                             title="Iniciar"
-                            className="rounded-lg p-2 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
+                            className="rounded-lg p-2 text-muted hover:bg-success-surface hover:text-success"
                           >
                             <Play size={16} />
                           </button>
@@ -452,28 +455,28 @@ export function App() {
                         <button
                           onClick={() => act(process, "restart")}
                           title="Reiniciar"
-                          className="rounded-lg p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-700"
+                          className="rounded-lg p-2 text-muted hover:bg-hover hover:text-link-hover"
                         >
                           <RotateCw size={16} />
                         </button>
                         <button
                           onClick={() => showLogs(process)}
                           title="Logs"
-                          className="rounded-lg p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-700"
+                          className="rounded-lg p-2 text-muted hover:bg-hover hover:text-link-hover"
                         >
                           <SquareChevronRight size={16} />
                         </button>
                         <button
                           onClick={() => act(process, "delete")}
                           title="Remover"
-                          className="rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-700"
+                          className="rounded-lg p-2 text-muted hover:bg-danger-surface hover:text-danger"
                         >
                           <Trash2 size={16} />
                         </button>
                         {busy === process.id && (
                           <RefreshCw
                             size={16}
-                            className="m-2 animate-spin text-blue-600"
+                            className="m-2 animate-spin text-accent"
                           />
                         )}
                       </div>
@@ -484,7 +487,7 @@ export function App() {
             </table>
           </div>
           {!loading && filtered.length === 0 && (
-            <div className="grid place-items-center px-5 py-16 text-center text-slate-500">
+            <div className="grid place-items-center px-5 py-16 text-center text-muted">
               <CircleOff size={32} />
               <p className="mt-3">Nenhum processo encontrado.</p>
             </div>
@@ -502,16 +505,16 @@ export function App() {
             if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) event.currentTarget.close();
           }
         }}
-        className="m-auto max-h-[90vh] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-0 text-[#465472] shadow-2xl backdrop:bg-[#06245e]/40 backdrop:backdrop-blur-sm"
+        className="m-auto max-h-[90vh] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-2xl border border-line bg-surface p-0 text-content shadow-dialog backdrop:bg-overlay backdrop:backdrop-blur-sm"
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <h2 id="add-process-title" className="text-lg font-semibold">Adicionar novo processo</h2>
           <button type="button" aria-label="Fechar" disabled={addingProcess || pickingFile}
             onClick={() => processDialog.current?.close()}
-            className="rounded-lg p-1 text-slate-500 hover:bg-blue-50"><X size={20} /></button>
+            className="rounded-lg p-1 text-muted hover:bg-hover"><X size={20} /></button>
         </div>
         <form onSubmit={addProcess} className="space-y-4 p-6">
-          <p id="ecosystem-help" className="text-sm text-slate-500">
+          <p id="ecosystem-help" className="text-sm text-muted">
             Informe o caminho do ecosystem.config.js na VM. Todos os processos definidos nele serão iniciados.
           </p>
           <label className="block text-sm font-medium">
@@ -520,14 +523,14 @@ export function App() {
               onChange={(event) => setEcosystemPath(event.target.value)}
               placeholder="C:\\servicos\\minha-app\\ecosystem.config.js"
               aria-describedby="ecosystem-help" required disabled={addingProcess}
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 font-mono text-sm outline-none focus:border-blue-500" />
+              className="mt-2 w-full rounded-lg border border-line bg-canvas px-3 py-2.5 font-mono text-sm outline-none focus:border-focus" />
           </label>
-           {processError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{processError}</p>}
-          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+           {processError && <p role="alert" className="rounded-lg bg-danger-surface p-3 text-sm text-danger">{processError}</p>}
+          <div className="flex justify-end gap-3 border-t border-line pt-4">
             <button type="button" disabled={addingProcess || pickingFile} onClick={() => processDialog.current?.close()}
-              className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm hover:bg-slate-50">Cancelar</button>
+              className="rounded-lg border border-line px-4 py-2.5 text-sm hover:bg-canvas">Cancelar</button>
             <button type="submit" disabled={addingProcess || pickingFile || !ecosystemPath.trim()}
-              className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
+              className="rounded-lg bg-action px-4 py-2.5 text-sm font-semibold text-on-action hover:bg-action-hover">
               {addingProcess ? "Iniciando…" : "Adicionar processo"}
             </button>
           </div>
@@ -535,26 +538,26 @@ export function App() {
       </dialog>
       {logs && (
         <div
-          className="fixed inset-0 z-20 grid place-items-center bg-[#06245e]/40 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-20 grid place-items-center bg-overlay p-4 backdrop-blur-sm"
           onClick={() => setLogs(null)}
         >
           <section
             onClick={(event) => event.stopPropagation()}
-            className="flex max-h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            className="flex max-h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-dialog"
           >
-            <header className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+            <header className="flex items-center justify-between border-b border-line px-5 py-4">
               <div className="flex items-center gap-2">
-                <Terminal size={18} className="text-blue-600" />
+                <Terminal size={18} className="text-accent" />
                 <strong>Logs · {logs.name}</strong>
               </div>
               <button
                 onClick={() => setLogs(null)}
-                className="rounded-lg p-1 text-slate-500 hover:bg-blue-50"
+                className="rounded-lg p-1 text-muted hover:bg-hover"
               >
                 <X size={18} />
               </button>
             </header>
-            <pre className="overflow-auto p-5 text-xs leading-6 text-slate-700">
+            <pre className="overflow-auto p-5 text-xs leading-6 text-content">
               {logs.content}
             </pre>
           </section>

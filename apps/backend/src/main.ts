@@ -1,14 +1,21 @@
 import compression from 'compression';
 import express, { type ErrorRequestHandler } from 'express';
+import { mkdir } from 'node:fs/promises';
+import { MulterError } from 'multer';
+import { MongoError, type Filter } from 'mongodb';
 import { resolve, sep } from 'node:path';
 import { authenticate, createSession, sessionCookie, validateLogin } from './auth';
 import { env } from './config';
 import { HttpError } from './http-error';
-import { networkOnly } from './network';
+import { connectDatabase, logs, mongo, publicUser, users, versions, type LogRecord } from './database';
+import { bootstrapUser, createUser } from './users';
+import { saveBuild, startVersion, uploadBuild, versionFolder, versionId } from './versions';
+import { startLogCollector } from './logs';
 import { listProcesses, processAction, processLogs, pickEcosystem, startEcosystem, type ProcessAction } from './pm2';
 
-const app = express();
-const frontendPath = resolve(__dirname, '..', 'frontend');
+export const app = express();
+const pendingAudit = new Set<Promise<unknown>>();
+const frontendPath = resolve(__dirname, '..', '..', 'frontend', 'dist');
 const actions = new Set<ProcessAction>(['start', 'restart', 'stop', 'delete']);
 
 app.disable('x-powered-by');
@@ -23,20 +30,67 @@ app.use((_request, response, next) => {
   });
   next();
 });
-app.use('/api', networkOnly, express.json({ limit: '4kb' }), (_request, response, next) => {
+app.use('/api', (request, response, next) => {
+  const path = request.path;
   response.set('Cache-Control', 'no-store');
+  response.once('finish', () => {
+    if (['/health', '/auth/me', '/processes', '/logs', '/versions', '/users'].includes(path) && request.method === 'GET') return;
+    const entry = logs.insertOne({ kind: 'audit', createdAt: new Date(),
+      username: response.locals.username, ip: request.ip || request.socket.remoteAddress,
+      method: request.method, path: `/api${path}`, status: response.statusCode,
+    }).catch((error) => console.error('Falha ao salvar auditoria:', error)).finally(() => pendingAudit.delete(entry));
+    pendingAudit.add(entry);
+  });
   next();
 });
+app.use('/api', express.json({ limit: '4kb' }));
 
 app.get('/api/health', (_request, response) => response.json({ status: 'ok', timestamp: new Date().toISOString() }));
-app.post('/api/auth/login', (request, response) => {
-  const username = validateLogin(request.ip || request.socket.remoteAddress || 'unknown', request.body?.username, request.body?.password);
+app.post('/api/auth/login', async (request, response) => {
+  const username = await validateLogin(request.ip || request.socket.remoteAddress || 'unknown', request.body?.username, request.body?.password);
+  response.locals.username = username;
   response.cookie('pm2_session', createSession(username), sessionCookie).json({ username });
 });
 app.post('/api/auth/logout', authenticate, (_request, response) => {
   response.clearCookie('pm2_session', { path: '/' }).status(204).end();
 });
-app.get('/api/auth/me', authenticate, (_request, response) => response.json({ authenticated: true }));
+app.get('/api/auth/me', authenticate, (_request, response) => response.json({ authenticated: true, username: response.locals.username }));
+
+app.get('/api/users', authenticate, async (_request, response) => {
+  response.json((await users.find({}, { projection: { passwordHash: 0 } }).sort({ username: 1 }).toArray()).map(publicUser));
+});
+app.post('/api/users', authenticate, async (request, response) => {
+  response.status(201).json(await createUser(request.body?.username, request.body?.password));
+});
+app.get('/api/logs', authenticate, async (request, response) => {
+  const filter: Filter<LogRecord> = {};
+  if (request.query.kind !== undefined) {
+    if (!['audit', 'process'].includes(String(request.query.kind))) throw new HttpError(400, 'Tipo de log inválido.');
+    filter.kind = request.query.kind as 'audit' | 'process';
+  }
+  if (request.query.processId !== undefined) filter.processId = parseId(String(request.query.processId));
+  const limit = Number(request.query.limit ?? 100);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new HttpError(400, 'Limite de logs deve estar entre 1 e 500.');
+  response.json(await logs.find(filter).sort({ createdAt: -1, _id: -1 }).limit(limit).toArray());
+});
+app.get('/api/versions', authenticate, async (_request, response) => {
+  response.json(await versions.find({}).sort({ createdAt: -1 }).limit(200).toArray());
+});
+app.post('/api/versions', authenticate, uploadBuild, async (request, response) => {
+  response.status(201).json(await saveBuild(request.file, request.body, response.locals.username));
+});
+app.get('/api/versions/:id/archive', authenticate, async (request, response, next) => {
+  const id = versionId(request.params.id);
+  const version = await versions.findOne({ _id: id });
+  if (!version || version.status === 'processing') throw new HttpError(404, 'Arquivo da versão não disponível.');
+  response.download(resolve(versionFolder(id), 'build.rar'), `${version.project}-${version.version}.rar`, (error) => {
+    if (error) next(new HttpError(404, 'Arquivo da versão não encontrado.'));
+  });
+});
+app.post('/api/versions/:id/start', authenticate, async (request, response) => {
+  await startVersion(versionId(request.params.id));
+  response.status(204).end();
+});
 
 app.get('/api/processes', authenticate, async (_request, response) => response.json(await listProcesses()));
 app.post('/api/ecosystems/pick', authenticate, async (_request, response) => {
@@ -70,9 +124,15 @@ app.use(express.static(frontendPath, {
 app.use((_request, response) => response.sendFile(resolve(frontendPath, 'index.html')));
 
 const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
+  if (response.headersSent) return;
   if (error instanceof HttpError) return void response.status(error.status).json({ message: error.message });
+  if (error instanceof MulterError) return void response.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({
+    message: error.code === 'LIMIT_FILE_SIZE' ? `O RAR excede o limite de ${env.uploadMaxBytes / 1024 / 1024} MB.` : 'Envio inválido. Informe projeto, versão e um único arquivo no campo build.',
+  });
   if (error instanceof SyntaxError && 'body' in error) return void response.status(400).json({ message: 'JSON inválido.' });
+  if (error?.type === 'entity.too.large') return void response.status(413).json({ message: 'Corpo da requisição muito grande.' });
   console.error(error);
+  if (error instanceof MongoError) return void response.status(503).json({ message: 'Não foi possível acessar o MongoDB.' });
   response.status(500).json({ message: 'Erro interno do servidor.' });
 };
 app.use(errorHandler);
@@ -84,10 +144,33 @@ function parseId(raw: string | string[] | undefined): number {
   return id;
 }
 
-const server = app.listen(env.port, env.host, () => {
-  console.log(`ati-dev-cockpit disponível em http://${env.host}:${env.port}`);
-});
-
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+export async function initialize() {
+  await connectDatabase();
+  await bootstrapUser();
+  await mkdir(resolve(env.versionsPath, '.uploads'), { recursive: true });
 }
+
+async function start() {
+  await initialize();
+  const server = app.listen(env.port, env.host, () => {
+    console.log(`ati-dev-cockpit disponível em http://${env.host}:${env.port}`);
+  });
+  server.on('error', (error) => { console.error(error); process.exit(1); });
+  const stopCollector = startLogCollector();
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => {
+      server.close(async () => {
+        await stopCollector();
+        await Promise.allSettled([...pendingAudit]);
+        await mongo.close();
+        process.exit(0);
+      });
+    });
+  }
+}
+
+if (require.main === module) start().catch(async (error: unknown) => {
+  console.error('Não foi possível iniciar o monitor:', error);
+  await mongo.close();
+  process.exit(1);
+});

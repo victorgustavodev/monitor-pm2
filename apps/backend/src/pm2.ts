@@ -1,13 +1,15 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { stat } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, resolve } from 'node:path';
 import { env } from './config';
 import { HttpError } from './http-error';
+import { parsePm2Output } from './pm2-output';
+import { inspectProcessPorts, type ProcessPorts } from './process-ports';
 
 const execFileAsync = promisify(execFile);
 export type ProcessAction = 'start' | 'restart' | 'stop' | 'delete';
-export interface ProcessView {
+export interface ProcessView extends ProcessPorts {
   id: number;
   name: string;
   status: string;
@@ -51,6 +53,31 @@ export async function startEcosystem(rawPath: unknown): Promise<void> {
   await run(['save', '--force']);
 }
 
+export async function deployEcosystem(path: string): Promise<void> {
+  const extension = extname(__filename);
+  const args = extension === '.ts' ? ['--require', require.resolve('tsx/cjs')] : [];
+  try {
+    await execFileAsync(process.execPath, [...args, resolve(__dirname, `deploy-worker${extension}`), path], {
+      cwd: dirname(path), windowsHide: true, timeout: 60_000, maxBuffer: 1024 * 1024,
+      env: { ...process.env, PM2_HOME: env.pm2Home ?? process.env.PM2_HOME },
+    });
+  } catch (error) {
+    const detail = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr).trim() : '';
+    throw new HttpError(502, `Falha ao iniciar a versão no PM2: ${detail || 'Operação interrompida ou tempo limite excedido.'}`);
+  }
+  await run(['save', '--force']);
+}
+
+export async function processLogSources(): Promise<Array<{ id: number; name: string; path: string }>> {
+  const { stdout } = await run(['jlist']);
+  const rows = parsePm2Output(stdout);
+  return rows.flatMap((item) => {
+    const paths = [item.pm2_env?.pm_out_log_path, item.pm2_env?.pm_err_log_path];
+    return [...new Set(paths)].filter((path): path is string => typeof path === 'string' && isAbsolute(path))
+      .map((path) => ({ id: Number(item.pm_id), name: String(item.name), path }));
+  });
+}
+
 let pickerOpen = false;
 export async function pickEcosystem(): Promise<string | null> {
   if (process.platform !== 'win32') throw new HttpError(400, 'O seletor está disponível somente no Windows.');
@@ -68,25 +95,34 @@ export async function pickEcosystem(): Promise<string | null> {
   }
 }
 
-export async function listProcesses(): Promise<ProcessView[]> {
+async function processRows() {
   const { stdout } = await run(['jlist']);
+  let rows: ReturnType<typeof parsePm2Output>;
   try {
-    const rows = JSON.parse(stdout) as Array<Record<string, any>>;
-    return rows.map((item) => ({
+    rows = parsePm2Output(stdout);
+  } catch {
+    console.error('[PM2 jlist] Lista JSON ausente ou inválida.', { stdoutBytes: Buffer.byteLength(stdout) });
+    throw new HttpError(502, 'O comando PM2 jlist não retornou uma lista JSON válida. Confira a instalação do PM2, a conta Windows e o PM2_HOME usados pelo monitor.');
+  }
+  return rows;
+}
+
+export async function listProcesses(): Promise<ProcessView[]> {
+  const rows = await processRows();
+  const ports = await inspectProcessPorts(rows);
+  return rows.map((item, index) => ({
+      ...ports[index],
       id: Number(item.pm_id), name: String(item.name), status: String(item.pm2_env?.status ?? 'unknown'),
       pid: Number(item.pid ?? 0), cpu: Number(item.monit?.cpu ?? 0), memory: Number(item.monit?.memory ?? 0),
       uptime: item.pm2_env?.pm_uptime ? Number(item.pm2_env.pm_uptime) : null,
       restarts: Number(item.pm2_env?.restart_time ?? 0),
       mode: String(item.pm2_env?.exec_mode ?? 'unknown').replace('_mode', ''),
       version: item.pm2_env?.version ? String(item.pm2_env.version) : null,
-    }));
-  } catch {
-    throw new HttpError(502, 'O PM2 retornou uma resposta inválida.');
-  }
+  }));
 }
 
 async function assertExists(id: number) {
-  if (!(await listProcesses()).some((process) => process.id === id)) {
+  if (!(await processRows()).some((process) => process.pm_id === id)) {
     throw new HttpError(404, 'Processo PM2 não encontrado.');
   }
 }

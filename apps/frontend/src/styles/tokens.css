@@ -1,0 +1,114 @@
+/* Valores de referência. Componentes devem consumir os tokens semânticos abaixo. */
+:root {
+  --palette-kpmg-blue: #00338d;
+  --palette-kpmg-cobalt: #1e49e2;
+  --palette-white: #ffffff;
+  --palette-kpmg-dark-blue: #0c233c;
+  --palette-kpmg-light-blue: #aceaff;
+  --palette-kpmg-pacific-blue: #00b8f5;
+  --palette-kpmg-purple: #7213ea;
+  --palette-kpmg-pink: #fd349c;
+  --palette-neutral-50: #f5f7fc;
+  --palette-neutral-100: #eef2fc;
+  --palette-neutral-200: #d6deee;
+  --palette-neutral-600: #52627a;
+  --palette-green-100: #d8f5e8;
+  --palette-green-200: #9fe0bd;
+  --palette-green-700: #087a56;
+  --palette-amber-100: #fff0c2;
+  --palette-amber-200: #e5ca7a;
+  --palette-amber-700: #936500;
+  --palette-red-50: #fef2f2;
+  --palette-red-200: #fecaca;
+  --palette-red-700: #b91c1c;
+
+  /* Superfícies e conteúdo. */
+  --ds-color-canvas: var(--palette-neutral-50);
+  --ds-color-surface: var(--palette-white);
+  --ds-color-subtle: var(--palette-neutral-100);
+  --ds-color-hover: var(--palette-neutral-100);
+  --ds-color-content: var(--palette-kpmg-dark-blue);
+  --ds-color-muted: var(--palette-neutral-600);
+  --ds-color-heading: var(--palette-kpmg-blue);
+  --ds-color-link: var(--palette-kpmg-cobalt);
+  --ds-color-link-hover: var(--palette-kpmg-blue);
+  --ds-color-accent: var(--palette-kpmg-cobalt);
+
+  /* Controles e navegação: estados explícitos, sem depender do nome da cor. */
+  --ds-color-action: var(--palette-kpmg-cobalt);
+  --ds-color-action-hover: var(--palette-kpmg-blue);
+  --ds-color-action-secondary: var(--palette-kpmg-blue);
+  --ds-color-on-action: var(--palette-white);
+  --ds-color-line: var(--palette-neutral-200);
+  --ds-color-line-strong: var(--palette-kpmg-blue);
+  --ds-color-focus: var(--palette-kpmg-cobalt);
+  --ds-color-shell: var(--palette-kpmg-blue);
+  --ds-color-shell-accent: var(--palette-kpmg-cobalt);
+  --ds-color-on-brand: var(--palette-white);
+  --ds-color-shell-muted: var(--palette-kpmg-light-blue);
+  --ds-color-shell-line: color-mix(in srgb, var(--palette-white) 25%, transparent);
+  --ds-color-shell-hover: color-mix(in srgb, var(--palette-white) 10%, transparent);
+  --ds-color-backdrop-base: var(--palette-kpmg-blue);
+  --ds-color-backdrop-accent: var(--palette-kpmg-cobalt);
+  --ds-color-overlay: color-mix(in srgb, var(--palette-kpmg-dark-blue) 50%, transparent);
+  --ds-color-selection: var(--palette-kpmg-light-blue);
+  --ds-color-on-selection: var(--palette-kpmg-blue);
+
+  /* Feedback: texto e símbolo acompanham a cor nos componentes. */
+  --ds-color-success: var(--palette-green-700);
+  --ds-color-success-surface: var(--palette-green-100);
+  --ds-color-success-line: var(--palette-green-200);
+  --ds-color-warning: var(--palette-amber-700);
+  --ds-color-warning-surface: var(--palette-amber-100);
+  --ds-color-warning-line: var(--palette-amber-200);
+  --ds-color-danger: var(--palette-red-700);
+  --ds-color-danger-surface: var(--palette-red-50);
+  --ds-color-danger-line: var(--palette-red-200);
+
+  /* Efeitos também usam referências da paleta. */
+  --ds-color-decoration-line: color-mix(in srgb, var(--palette-white) 13%, transparent);
+  --ds-color-decoration-halo: color-mix(in srgb, var(--palette-white) 3%, transparent);
+  --ds-color-decoration-halo-subtle: color-mix(in srgb, var(--palette-white) 2%, transparent);
+  --ds-shadow-card: 0 2px 3px color-mix(in srgb, var(--palette-kpmg-blue) 7%, transparent);
+  --ds-shadow-login: 0 24px 64px -16px color-mix(in srgb, var(--palette-kpmg-dark-blue) 35%, transparent);
+  --ds-shadow-dialog: 0 24px 48px -12px color-mix(in srgb, var(--palette-kpmg-dark-blue) 30%, transparent);
+  --ds-shadow-focus: 0 0 0 3px color-mix(in srgb, var(--ds-color-focus) 14%, transparent);
+}
+
+/* Adaptador Tailwind v4. "inline" mantém os aliases resolvidos no consumidor. */
+@theme inline {
+  --color-canvas: var(--ds-color-canvas);
+  --color-surface: var(--ds-color-surface);
+  --color-subtle: var(--ds-color-subtle);
+  --color-hover: var(--ds-color-hover);
+  --color-content: var(--ds-color-content);
+  --color-muted: var(--ds-color-muted);
+  --color-heading: var(--ds-color-heading);
+  --color-link: var(--ds-color-link);
+  --color-link-hover: var(--ds-color-link-hover);
+  --color-accent: var(--ds-color-accent);
+  --color-action: var(--ds-color-action);
+  --color-action-hover: var(--ds-color-action-hover);
+  --color-action-secondary: var(--ds-color-action-secondary);
+  --color-on-action: var(--ds-color-on-action);
+  --color-line: var(--ds-color-line);
+  --color-line-strong: var(--ds-color-line-strong);
+  --color-focus: var(--ds-color-focus);
+  --color-shell: var(--ds-color-shell);
+  --color-shell-accent: var(--ds-color-shell-accent);
+  --color-on-brand: var(--ds-color-on-brand);
+  --color-shell-muted: var(--ds-color-shell-muted);
+  --color-shell-line: var(--ds-color-shell-line);
+  --color-shell-hover: var(--ds-color-shell-hover);
+  --color-overlay: var(--ds-color-overlay);
+  --color-success: var(--ds-color-success);
+  --color-success-surface: var(--ds-color-success-surface);
+  --color-success-line: var(--ds-color-success-line);
+  --color-warning: var(--ds-color-warning);
+  --color-warning-surface: var(--ds-color-warning-surface);
+  --color-warning-line: var(--ds-color-warning-line);
+  --color-danger: var(--ds-color-danger);
+  --color-danger-surface: var(--ds-color-danger-surface);
+  --color-danger-line: var(--ds-color-danger-line);
+  --shadow-dialog: var(--ds-shadow-dialog);
+}

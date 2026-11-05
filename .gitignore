@@ -8,7 +8,9 @@ coverage/
 apps/frontend/vite.config.js
 apps/frontend/vite.config.d.ts
 runtime/
+versions/
 .vscode/
 .idea/
 Thumbs.db
 .DS_Store
+.png

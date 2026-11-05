@@ -1,9 +1,10 @@
 @import "tailwindcss";
+@import "./styles/tokens.css";
 
 :root {
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  color: #465472;
-  background: #f4f6fa;
+  color: var(--ds-color-content);
+  background: var(--ds-color-canvas);
   font-synthesis: none;
 }
 
@@ -13,25 +14,38 @@ body {
   min-height: 100vh;
 }
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
 .grid-bg {
-  background: #f4f6fa;
+  background: var(--ds-color-canvas);
 }
 
 .glass {
-  background: #fff;
-  box-shadow: 0 2px 3px rgb(20 39 73 / 10%);
+  background: var(--ds-color-surface);
+  box-shadow: var(--ds-shadow-card);
 }
 
 button { cursor: pointer; }
 button:disabled { cursor: wait; opacity: .5; }
-button:focus-visible { outline: 2px solid #287bed; outline-offset: 3px; }
-input { color: #334361; }
-input::placeholder { color: #8591a8; }
-::selection { background: #dceaff; color: #06245e; }
+:is(button, a, select):focus-visible { outline: 2px solid var(--ds-color-focus); outline-offset: 3px; }
+input, select { color: var(--ds-color-content); }
+input::placeholder { color: var(--ds-color-muted); }
+::selection { background: var(--ds-color-selection); color: var(--ds-color-on-selection); }
+
+.brand-header {
+  background: var(--ds-color-shell);
+  border-bottom: 4px solid var(--ds-color-shell-accent);
+}
+
+.brand-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
 
 /* Estilos exclusivos da tela de login. */
 .login-background {
@@ -44,9 +58,8 @@ input::placeholder { color: #8591a8; }
   padding: 24px 16px;
   overflow: clip;
   background:
-    radial-gradient(ellipse at 12% 8%, #edf3fc 0%, transparent 55%),
-    radial-gradient(ellipse at 92% 88%, #eaf1fb 0%, transparent 50%),
-    linear-gradient(145deg, #fafbfd 0%, #ffffff 48%, #f3f5f9 100%);
+    radial-gradient(ellipse at 100% 100%, var(--ds-color-backdrop-accent) 0%, transparent 62%),
+    var(--ds-color-backdrop-base);
 }
 
 .login-background::before,
@@ -56,7 +69,7 @@ input::placeholder { color: #8591a8; }
   z-index: -1;
   width: clamp(220px, 32vw, 480px);
   aspect-ratio: 1;
-  border: 1px solid rgb(6 36 94 / 5%);
+  border: 1px solid var(--ds-color-decoration-line);
   border-radius: 48px;
   pointer-events: none;
 }
@@ -65,48 +78,60 @@ input::placeholder { color: #8591a8; }
   top: -8%;
   right: -8%;
   transform: rotate(28deg);
-  box-shadow: 0 0 0 40px rgb(6 36 94 / 1.2%);
+  box-shadow: 0 0 0 40px var(--ds-color-decoration-halo);
 }
 
 .login-background::after {
   bottom: -18%;
   left: -10%;
   transform: rotate(-20deg);
-  box-shadow: 0 0 0 64px rgb(6 36 94 / 1%);
+  box-shadow: 0 0 0 64px var(--ds-color-decoration-halo-subtle);
 }
 
 .login-card {
   width: 100%;
   max-width: 448px;
-  padding: 32px;
-  border: 1px solid #e1e7ef;
+  overflow: hidden;
+  border: 1px solid var(--ds-color-shell-line);
   border-radius: 20px;
-  background: #fff;
-  box-shadow: 0 16px 56px -16px rgb(6 36 94 / 13%), 0 2px 8px rgb(6 36 94 / 3%);
+  background: var(--ds-color-surface);
+  box-shadow: var(--ds-shadow-login);
 }
+
+.login-brand {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 120px;
+  background: var(--ds-color-shell);
+  border-bottom: 4px solid var(--ds-color-shell-accent);
+}
+
+.login-brand .brand-logo { width: 172px; height: 92px; }
+.login-content { padding: 32px; }
 
 .login-input {
   display: block;
   width: 100%;
   height: 48px;
   padding: 0 16px;
-  border: 1px solid #d9e0ea;
+  border: 1px solid var(--ds-color-line);
   border-radius: 8px;
-  background: #fafbfd;
-  color: #253654;
+  background: var(--ds-color-canvas);
+  color: var(--ds-color-content);
   font-size: 14px;
   font-weight: 400;
   outline: none;
   transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
 }
 
-.login-input:hover { border-color: #b8c5d8; }
+.login-input:hover { border-color: var(--ds-color-line-strong); }
 .login-input:focus {
-  border-color: #287bed;
-  background: #fff;
-  box-shadow: 0 0 0 3px rgb(40 123 237 / 12%);
+  border-color: var(--ds-color-focus);
+  background: var(--ds-color-surface);
+  box-shadow: var(--ds-shadow-focus);
 }
-.login-input::placeholder { color: #8793a6; opacity: 1; }
+.login-input::placeholder { color: var(--ds-color-muted); opacity: 1; }
 .login-password { padding-right: 48px; }
 .login-password-toggle {
   position: absolute;
@@ -115,11 +140,11 @@ input::placeholder { color: #8591a8; }
   place-items: center;
   width: 40px;
   border-radius: 6px;
-  color: #74839b;
+  color: var(--ds-color-muted);
   transition: color 160ms ease, background-color 160ms ease;
 }
-.login-password-toggle:hover { color: #06245e; background: #edf3fc; }
+.login-password-toggle:hover { color: var(--ds-color-link-hover); background: var(--ds-color-hover); }
 
 @media (max-width: 380px) {
-  .login-card { padding: 24px; }
+  .login-content { padding: 24px; }
 }

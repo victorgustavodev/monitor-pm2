@@ -2,9 +2,12 @@ import type { NextFunction, Request, Response } from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { env } from './config';
 import { HttpError } from './http-error';
+import { users } from './database';
+import { verifyPassword, hashPassword } from './password';
 
 const SESSION_SECONDS = 8 * 60 * 60;
 const attempts = new Map<string, { count: number; resetAt: number }>();
+const dummyHash = hashPassword('invalid-user-timing-placeholder');
 
 function safeEqual(actual: string, expected: string): boolean {
   const left = Buffer.from(actual);
@@ -38,36 +41,41 @@ function readSession(request: Request): string | undefined {
   }
 }
 
-function verifySession(token: string): boolean {
+function verifySession(token: string): string | undefined {
   try {
     const [header, payload, tokenSignature, extra] = token.split('.');
-    if (!header || !payload || !tokenSignature || extra) return false;
+    if (!header || !payload || !tokenSignature || extra) return;
     const expected = signature(`${header}.${payload}`);
-    if (!safeEqual(tokenSignature, expected)) return false;
-    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { exp?: number; role?: string };
-    return claims.role === 'admin' && typeof claims.exp === 'number' && claims.exp > Date.now() / 1000;
+    if (!safeEqual(tokenSignature, expected)) return;
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { exp?: number; role?: string; sub?: string };
+    if (claims.role === 'admin' && typeof claims.sub === 'string' && typeof claims.exp === 'number' && claims.exp > Date.now() / 1000) return claims.sub;
   } catch {
-    return false;
+    return;
   }
 }
 
-export function authenticate(request: Request, _response: Response, next: NextFunction) {
-  const token = readSession(request);
+export async function authenticate(request: Request, response: Response, next: NextFunction) {
+  let token: string | undefined;
+  try { token = readSession(request); } catch { return next(new HttpError(401, 'Cookie de sessão inválido.')); }
   if (!token) return next(new HttpError(401, 'Sessão não encontrada.'));
-  if (!verifySession(token)) return next(new HttpError(401, 'Sessão inválida ou expirada.'));
+  const username = verifySession(token);
+  if (!username || !(await users.findOne({ username }, { projection: { _id: 1 } }))) return next(new HttpError(401, 'Sessão inválida ou expirada.'));
+  response.locals.username = username;
   next();
 }
 
-export function validateLogin(ip: string, username: unknown, password: unknown): string {
+export async function validateLogin(ip: string, username: unknown, password: unknown): Promise<string> {
   const now = Date.now();
+  for (const [key, value] of attempts) if (value.resetAt <= now) attempts.delete(key);
   const current = attempts.get(ip);
   if (current && current.resetAt > now && current.count >= 5) {
     throw new HttpError(429, 'Muitas tentativas. Aguarde 15 minutos.');
   }
-  if (
-    typeof username !== 'string' || typeof password !== 'string' ||
-    !safeEqual(username, env.adminUsername) || !safeEqual(password, env.adminPassword)
-  ) {
+  const normalized = typeof username === 'string' ? username.trim().toLowerCase() : '';
+  const user = normalized && normalized.length <= 64 ? await users.findOne({ username: normalized }) : null;
+  const valid = typeof password === 'string' && password.length <= 256 &&
+    await verifyPassword(password, user?.passwordHash ?? await dummyHash);
+  if (!user || !valid) {
     const next = current && current.resetAt > now
       ? { ...current, count: current.count + 1 }
       : { count: 1, resetAt: now + 15 * 60_000 };
@@ -75,7 +83,7 @@ export function validateLogin(ip: string, username: unknown, password: unknown):
     throw new HttpError(401, 'Usuário ou senha inválidos.');
   }
   attempts.delete(ip);
-  return username;
+  return user.username;
 }
 
 export const sessionCookie = {

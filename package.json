@@ -11,7 +11,8 @@
     "build": "npm run build --workspace @ati-dev-cockpit/frontend && npm run build --workspace @ati-dev-cockpit/backend",
     "start": "npm run start --workspace @ati-dev-cockpit/backend",
     "start:prod": "npm run start:prod --workspace @ati-dev-cockpit/backend",
-    "typecheck": "npm run typecheck --workspace @ati-dev-cockpit/frontend && npm run typecheck --workspace @ati-dev-cockpit/backend"
+    "typecheck": "npm run typecheck --workspace @ati-dev-cockpit/frontend && npm run typecheck --workspace @ati-dev-cockpit/backend",
+    "test": "npm run test --workspace @ati-dev-cockpit/backend"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
