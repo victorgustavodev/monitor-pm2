@@ -1,56 +1,13 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Activity from "lucide-react/dist/esm/icons/activity.js";
-import CircleOff from "lucide-react/dist/esm/icons/circle-off.js";
-import Cpu from "lucide-react/dist/esm/icons/cpu.js";
-import Database from "lucide-react/dist/esm/icons/database.js";
-import LogOut from "lucide-react/dist/esm/icons/log-out.js";
-import MemoryStick from "lucide-react/dist/esm/icons/memory-stick.js";
-import Play from "lucide-react/dist/esm/icons/play.js";
-import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
-import RotateCw from "lucide-react/dist/esm/icons/rotate-cw.js";
-import Search from "lucide-react/dist/esm/icons/search.js";
-import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import Square from "lucide-react/dist/esm/icons/square.js";
-import Terminal from "lucide-react/dist/esm/icons/terminal.js";
-import Trash2 from "lucide-react/dist/esm/icons/trash-2.js";
-import X from "lucide-react/dist/esm/icons/x.js";
-import Eye from "lucide-react/dist/esm/icons/eye.js";
-import EyeOff from "lucide-react/dist/esm/icons/eye-off.js";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { RefreshCw, Eye, EyeOff, X, Terminal, Plus, FolderOpen } from "lucide-react";
 import Logo from "./assets/logo.png";
-import { Ban, SquareChevronRight } from "lucide-react";
 import { api, ApiError } from "./api";
 import { Management } from "./Management";
-
-type Process = {
-  id: number;
-  name: string;
-  status: string;
-  pid: number;
-  cpu: number;
-  memory: number;
-  uptime: number | null;
-  restarts: number;
-  mode: string;
-  version: string | null;
-  ports: number[];
-  portSource: "listening" | "configured" | null;
-};
-type Action = "start" | "restart" | "stop" | "delete";
-
-const formatMemory = (bytes: number) =>
-  `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-const formatUptime = (since: number | null) => {
-  if (!since) return "—";
-  const seconds = Math.max(0, Math.floor((Date.now() - since) / 1000));
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return days
-    ? `${days}d ${hours}h`
-    : hours
-      ? `${hours}h ${minutes}m`
-      : `${minutes}m`;
-};
+import { Sidebar, dashboardViews, type DashboardView } from "./Sidebar";
+import { Overview } from "./Overview";
+import { Applications } from "./Applications";
+import { Settings } from "./Settings";
+import type { Process, ProcessAction } from "./processes";
 
 function Login({ onLogin, serverError }: { onLogin: () => Promise<void>; serverError: string }) {
   const [error, setError] = useState("");
@@ -153,6 +110,13 @@ function Login({ onLogin, serverError }: { onLogin: () => Promise<void>; serverE
 
 export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [view, setView] = useState<DashboardView>('overview');
+  const [username, setUsername] = useState('');
+  const [connected, setConnected] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [managementBusy, setManagementBusy] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [processes, setProcesses] = useState<Process[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -174,9 +138,11 @@ export function App() {
       setLoading(true);
       const rows = await api<Process[]>("/api/processes");
       setProcesses(rows);
-      setAuthenticated(true);
+      setConnected(true);
+      setUpdatedAt(new Date());
       setError("");
     } catch (reason) {
+      setConnected(false);
       if (reason instanceof ApiError && reason.status === 401) setAuthenticated(false);
       setError((reason as Error).message);
     } finally {
@@ -184,8 +150,12 @@ export function App() {
     }
   }, []);
   useEffect(() => {
-    api("/api/auth/me")
-      .then(() => load())
+    api<{ username: string }>("/api/auth/me")
+      .then((session) => {
+        setUsername(session.username);
+        setAuthenticated(true);
+        return load();
+      })
       .catch((reason: unknown) => {
         if (!(reason instanceof ApiError && reason.status === 401)) {
           setError(reason instanceof Error ? reason.message : "Falha ao verificar sua sessão.");
@@ -195,23 +165,21 @@ export function App() {
       });
   }, [load]);
   useEffect(() => {
-    if (!authenticated) return;
+    if (!authenticated || !autoRefresh) return;
     const timer = window.setInterval(load, 10_000);
-    return () => clearInterval(timer);
-  }, [authenticated, load]);
+    return () => window.clearInterval(timer);
+  }, [authenticated, autoRefresh, load]);
 
-  const filtered = useMemo(
-    () =>
-      processes.filter((item) =>
-        item.name.toLowerCase().includes(query.toLowerCase()),
-      ),
-    [processes, query],
-  );
-  const online = processes.filter((item) => item.status === "online").length;
-  const memory = processes.reduce((total, item) => total + item.memory, 0);
-  const cpu = processes.reduce((total, item) => total + item.cpu, 0);
+  async function onLogin() {
+    const session = await api<{ username: string }>('/api/auth/me');
+    setUsername(session.username);
+    setView('overview');
+    setAuthenticated(true);
+    await load();
+  }
 
-  async function act(process: Process, action: Action) {
+
+  async function act(process: Process, action: ProcessAction) {
     if (
       action === "delete" &&
       !window.confirm(`Remover ${process.name} da lista do PM2?`)
@@ -275,10 +243,27 @@ export function App() {
     }
   }
 
-  async function logout() {
-    await api("/api/auth/logout", { method: "POST" });
-    setAuthenticated(false);
+  function openAddProcess() {
+    setProcessError('');
+    processDialog.current?.showModal();
   }
+
+  async function logout() {
+    setLoggingOut(true);
+    try {
+      await api("/api/auth/logout", { method: "POST" });
+      setAuthenticated(false);
+      setUsername('');
+      setProcesses([]);
+      setNotice('');
+      setError('');
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally { setLoggingOut(false); }
+  }
+
+  const currentView = dashboardViews.find((item) => item.id === view)!;
+  const managementPanel = view === 'builds' ? 'versions' : view === 'users' || view === 'logs' ? view : null;
 
   if (authenticated === null)
     return (
@@ -286,214 +271,48 @@ export function App() {
         <RefreshCw className="animate-spin" />
       </div>
     );
-  if (!authenticated) return <Login onLogin={load} serverError={error} />;
+  if (!authenticated) return <Login onLogin={onLogin} serverError={error} />;
   return (
-    <main className="grid-bg min-h-screen bg-canvas text-content">
-      <header className="brand-header text-on-brand">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3">
-          <div className="flex items-center gap-3">
-            <div className="h-16 w-28 shrink-0">
-              <img
-                src={Logo}
-                alt="KPMG"
-                width={214}
-                height={113}
-                className="brand-logo"
-                decoding="async"
-              />
-            </div>
-            <div className="border-l border-shell-line pl-3">
-              <strong className="text-sm tracking-tight">MONITOR PM2</strong>
-            </div>
-          </div>
-          <div className="">
-            <button
-              onClick={logout}
-              title="Sair"
-              className="rounded-lg p-2 text-shell-muted hover:bg-shell-hover hover:text-on-brand"
-            >
-              <LogOut size={18} />
-            </button>
-          </div>
-        </div>
-      </header>
-      <div className="mx-auto max-w-7xl p-5 sm:p-8">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <div className="dashboard-shell">
+      <a className="skip-link" href="#dashboard-main">Ir para o conteúdo</a>
+      <Sidebar view={view} onNavigate={setView} username={username} count={processes.length}
+        busy={managementBusy || loggingOut} onLogout={logout} />
+      <main id="dashboard-main" className="dashboard-content" tabIndex={-1}>
+        <header className="dashboard-page-header">
           <div>
-            <p className="text-sm font-medium text-accent">VISÃO GERAL</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-              Processos da VM
-            </h1>
+            <p className="page-eyebrow">MONITOR PM2</p>
+            <h1>{currentView.label}</h1>
+            <p className="page-description">{currentView.description}</p>
           </div>
-          <button
-            onClick={load}
-            disabled={loading}
-            className="flex items-center justify-center gap-2 rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-action-secondary hover:bg-hover"
-          >
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-            Atualizar
-          </button>
+          <div className="page-actions">
+            {!managementPanel && <button type="button" onClick={load} disabled={loading}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm font-medium text-action-secondary hover:bg-hover">
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} aria-hidden="true" />Atualizar
+            </button>}
+            {view === 'processes' && <button type="button"
+              onClick={openAddProcess}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-action px-4 py-2.5 text-sm font-semibold text-on-action hover:bg-action-hover">
+              <Plus size={16} aria-hidden="true" />Adicionar processo
+            </button>}
+          </div>
+        </header>
+        <div className="dashboard-sync" aria-live="off">
+          <span className={`sync-dot ${connected ? 'bg-success' : loading ? 'bg-warning' : 'bg-danger'}`} />
+          <span>{loading ? 'Atualizando dados…' : updatedAt ? `Atualizado às ${updatedAt.toLocaleTimeString('pt-BR')}` : 'Aguardando dados do PM2'}</span>
+          <span className="sync-divider" />
+          <span>{autoRefresh ? 'Atualização automática a cada 10 s' : 'Atualização automática pausada'}</span>
         </div>
-        <section className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            ["Online", `${online}/${processes.length}`, Activity],
-            ["CPU total", `${cpu.toFixed(1)}%`, Cpu],
-            ["Memória", formatMemory(memory), MemoryStick],
-            ["Daemon", "Conectado", Database],
-          ].map(([label, value, Icon]) => (
-            <div
-              key={String(label)}
-              className="glass rounded-2xl border border-line p-5"
-            >
-              <div className="flex items-center justify-between text-sm text-muted">
-                <span>{label as string}</span>
-                <Icon size={18} className="text-accent" />
-              </div>
-              <p className="mt-3 text-2xl font-semibold">{value as string}</p>
-            </div>
-          ))}
-        </section>
-        {error && (
-          <div className="mt-5 flex items-center justify-between rounded-xl border border-danger-line bg-danger-surface px-4 py-3 text-sm text-danger">
-            <span>{error}</span>
-            <button onClick={() => setError("")}>
-              <X size={16} />
-            </button>
-          </div>
-        )}
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-          {notice && <p role="status" className="text-sm text-success">{notice}</p>}
-          <button
-            type="button"
-            onClick={() => { setProcessError(""); processDialog.current?.showModal(); }}
-            className="ml-auto rounded-lg bg-action px-4 py-2.5 text-sm font-semibold text-on-action hover:bg-action-hover"
-          >
-            Adicionar novo processo
-          </button>
-        </div>
-        <Management onStarted={load} onSessionExpired={sessionExpired} />
-        <section className="glass mt-6 overflow-hidden rounded-2xl border border-line">
-          <div className="flex flex-col gap-4 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="font-medium">Aplicações</h2>
-            <label className="relative">
-              <Search
-                className="absolute left-3 top-2.5 text-muted"
-                size={16}
-              />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar processo"
-                className="w-full rounded-lg border border-line bg-canvas py-2 pl-9 pr-3 text-sm outline-none focus:border-focus sm:w-64"
-              />
-            </label>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-left text-sm">
-              <thead className="bg-canvas text-xs uppercase tracking-wider text-muted">
-                <tr>
-                  <th className="px-5 py-3">Aplicação</th>
-                  <th>Status</th>
-                  <th>Porta</th>
-                  <th>CPU</th>
-                  <th>Memória</th>
-                  <th>Uptime</th>
-                  <th>Reinícios</th>
-                  <th className="px-5 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((process) => (
-                  <tr
-                    key={process.id}
-                    className="border-t border-line/70 transition hover:bg-hover/60"
-                  >
-                    <td className="px-5 py-4">
-                      <div className="font-medium">{process.name}</div>
-                      <div className="mt-0.5 text-xs text-muted">
-                        id {process.id} · PID {process.pid || "—"} ·{" "}
-                        {process.mode}
-                      </div>
-                    </td>
-                    <td>
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${process.status === "online" ? "bg-success-surface text-success" : process.status === "stopped" ? "bg-subtle text-muted" : "bg-warning-surface text-warning"}`}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                        {process.status}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="font-mono tabular-nums" title={process.portSource === "listening" ? "Portas TCP em escuta neste processo ou em seus subprocessos" : process.portSource === "configured" ? "Porta informada na configuração; não confirmada em escuta" : "Porta não identificada"}>
-                        {process.ports?.length ? process.ports.join(", ") : "—"}
-                      </span>
-                      {process.portSource === "configured" && <p className="mt-0.5 text-xs text-muted">Configurada</p>}
-                    </td>
-                    <td>{process.cpu.toFixed(1)}%</td>
-                    <td>{formatMemory(process.memory)}</td>
-                    <td>{formatUptime(process.uptime)}</td>
-                    <td>{process.restarts}</td>
-                    <td className="px-5">
-                      <div className="flex justify-end gap-1">
-                        {process.status === "online" ? (
-                          <button
-                            onClick={() => act(process, "stop")}
-                            title="Parar"
-                            className="rounded-lg p-2 text-muted hover:bg-warning-surface hover:text-warning"
-                          >
-                            <Ban size={16} />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => act(process, "start")}
-                            title="Iniciar"
-                            className="rounded-lg p-2 text-muted hover:bg-success-surface hover:text-success"
-                          >
-                            <Play size={16} />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => act(process, "restart")}
-                          title="Reiniciar"
-                          className="rounded-lg p-2 text-muted hover:bg-hover hover:text-link-hover"
-                        >
-                          <RotateCw size={16} />
-                        </button>
-                        <button
-                          onClick={() => showLogs(process)}
-                          title="Logs"
-                          className="rounded-lg p-2 text-muted hover:bg-hover hover:text-link-hover"
-                        >
-                          <SquareChevronRight size={16} />
-                        </button>
-                        <button
-                          onClick={() => act(process, "delete")}
-                          title="Remover"
-                          className="rounded-lg p-2 text-muted hover:bg-danger-surface hover:text-danger"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                        {busy === process.id && (
-                          <RefreshCw
-                            size={16}
-                            className="m-2 animate-spin text-accent"
-                          />
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {!loading && filtered.length === 0 && (
-            <div className="grid place-items-center px-5 py-16 text-center text-muted">
-              <CircleOff size={32} />
-              <p className="mt-3">Nenhum processo encontrado.</p>
-            </div>
-          )}
-        </section>
-      </div>
+        {error && <div role="alert" className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-danger-line bg-danger-surface px-4 py-3 text-sm text-danger">
+          <span>{error}</span><button type="button" aria-label="Fechar mensagem de erro" onClick={() => setError('')}><X size={16} /></button>
+        </div>}
+        {notice && <p role="status" className="mb-5 rounded-xl bg-success-surface px-4 py-3 text-sm text-success">{notice}</p>}
+        {view === 'overview' && <Overview processes={processes} connected={connected} loading={loading} onProcesses={() => setView('processes')} />}
+        {view === 'processes' && <Applications processes={processes} query={query} onQueryChange={setQuery}
+          loading={loading} busy={busy} onAction={act} onLogs={showLogs} onAdd={openAddProcess} />}
+        {managementPanel && <Management key={managementPanel} panel={managementPanel} onStarted={load}
+          onSessionExpired={sessionExpired} onBusyChange={setManagementBusy} />}
+        {view === 'settings' && <Settings autoRefresh={autoRefresh} onAutoRefreshChange={setAutoRefresh} username={username} />}
+      </main>
       <dialog
         ref={processDialog}
         aria-labelledby="add-process-title"
@@ -525,6 +344,10 @@ export function App() {
               aria-describedby="ecosystem-help" required disabled={addingProcess}
               className="mt-2 w-full rounded-lg border border-line bg-canvas px-3 py-2.5 font-mono text-sm outline-none focus:border-focus" />
           </label>
+          <button type="button" onClick={selectEcosystem} disabled={addingProcess || pickingFile}
+            className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm text-action-secondary hover:bg-hover">
+            <FolderOpen size={16} aria-hidden="true" />{pickingFile ? 'Selecionando…' : 'Selecionar na VM'}
+          </button>
            {processError && <p role="alert" className="rounded-lg bg-danger-surface p-3 text-sm text-danger">{processError}</p>}
           <div className="flex justify-end gap-3 border-t border-line pt-4">
             <button type="button" disabled={addingProcess || pickingFile} onClick={() => processDialog.current?.close()}
@@ -541,7 +364,7 @@ export function App() {
           className="fixed inset-0 z-20 grid place-items-center bg-overlay p-4 backdrop-blur-sm"
           onClick={() => setLogs(null)}
         >
-          <section
+          <section role="dialog" aria-modal="true" aria-label={`Logs de ${logs.name}`}
             onClick={(event) => event.stopPropagation()}
             className="flex max-h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-dialog"
           >
@@ -552,6 +375,7 @@ export function App() {
               </div>
               <button
                 onClick={() => setLogs(null)}
+                aria-label="Fechar logs"
                 className="rounded-lg p-1 text-muted hover:bg-hover"
               >
                 <X size={18} />
@@ -563,6 +387,6 @@ export function App() {
           </section>
         </div>
       )}
-    </main>
+    </div>
   );
 }

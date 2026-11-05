@@ -48,6 +48,9 @@
   --ds-color-shell-muted: var(--palette-kpmg-light-blue);
   --ds-color-shell-line: color-mix(in srgb, var(--palette-white) 25%, transparent);
   --ds-color-shell-hover: color-mix(in srgb, var(--palette-white) 10%, transparent);
+  --ds-color-navigation-active: color-mix(in srgb, var(--palette-white) 16%, var(--ds-color-shell));
+  --ds-color-navigation-focus: var(--palette-kpmg-light-blue);
+  --ds-color-navigation-icon: color-mix(in srgb, var(--palette-white) 78%, transparent);
   --ds-color-backdrop-base: var(--palette-kpmg-blue);
   --ds-color-backdrop-accent: var(--palette-kpmg-cobalt);
   --ds-color-overlay: color-mix(in srgb, var(--palette-kpmg-dark-blue) 50%, transparent);

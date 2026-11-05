@@ -45,4 +45,14 @@ Para alterar uma cor de marca, edite o primitivo. Para alterar somente uma funç
 
 Estados devem continuar identificáveis por texto ou ícone, além da cor. Mantenha contraste suficiente entre texto e superfície e preserve o indicador de foco. A logo branca exige o fundo `shell`. O favicon e a metadata `theme-color` são artefatos independentes do CSS e devem acompanhar a cor institucional quando a marca mudar.
 
+## Navegação e layout
+
+O painel autenticado usa uma sidebar azul com a logo branca, o usuário conectado e seis áreas: visão geral, processos, logs, usuários, builds e configurações. `Sidebar.tsx` centraliza os destinos; `App.tsx` controla a área ativa. O estado ativo, o hover, os ícones e o foco de teclado da navegação usam os tokens `--ds-color-navigation-*` e `--ds-color-shell-*`.
+
+Em desktop, a sidebar permanece visível enquanto o conteúdo rola. Em telas menores que 768 px, ela vira uma barra superior com navegação horizontal. O conteúdo mantém largura flexível e tabelas rolam dentro do próprio card. O atalho “Ir para o conteúdo” permite pular a navegação usando o teclado.
+
+A visão geral mostra quatro indicadores em duas colunas e um resumo de até seis processos; a tabela completa, com portas e ações, fica na área Processos. Cadastros e envios em andamento bloqueiam a troca de área até a conclusão. Em Configurações, a atualização dos processos pode ser pausada durante a sessão.
+
+Na área Processos, o seletor **Lista / Cards** alterna a apresentação das aplicações sem alterar os dados ou a busca. A lista é o formato inicial; a preferência é salva no `localStorage` deste navegador sob a chave `monitor-pm2:applications-layout`. Se o armazenamento estiver indisponível, a troca continua funcionando durante a navegação atual. Os cards usam duas colunas no desktop e uma no celular e incluem o atalho **Novo processo**. Status, portas e ações são componentes compartilhados entre os dois formatos, incluindo o bloqueio de ações durante uma operação.
+
 Referências: [aliases de design tokens](https://www.designtokens.org/tr/2025.10/format/), [variáveis de tema do Tailwind](https://tailwindcss.com/docs/theme).

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --configLoader runner",
     "build": "tsc -b && vite build --configLoader runner",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",
@@ -19,6 +20,7 @@
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.1",
+    "jsdom": "^27.4.0",
     "typescript": "^5.9.3",
     "vite": "^7.2.2"
   }

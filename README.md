@@ -4,7 +4,9 @@ Painel web para visualizar e operar processos do PM2 em uma VM Windows. O fronte
 
 ## Funcionalidades
 
+- Navegação lateral com visão geral, processos, logs, usuários, builds e configurações; em celular, a navegação fica no topo.
 - Lista status, PID, portas TCP, CPU, memória, uptime e reinícios dos processos.
+- Permite alternar as aplicações entre lista e cards, mantendo a busca e as ações nos dois formatos e salvando a preferência no navegador.
 - Inicia, para, reinicia e remove processos; também permite iniciar um ecosystem já existente na VM.
 - Aceita builds prontos em `.rar`, identifica projeto e versão, preserva o arquivo original e extrai os arquivos em `versions/`.
 - Permite baixar o RAR original e iniciar qualquer versão salva no PM2, inclusive uma versão anterior.
@@ -190,4 +192,6 @@ npm.cmd test
 npm.cmd run build
 ```
 
-Os testes usam um MongoDB temporário (o binário é baixado na primeira execução) e um daemon PM2 com pasta e endpoints exclusivos, incluindo pipes exclusivos no Windows. Cobrem autenticação, criação de usuários, upload e extração de RAR, validação dos arquivos, persistência dos logs, troca de builds e retorno a uma versão anterior.
+Os testes do backend usam um MongoDB temporário (o binário é baixado na primeira execução) e um daemon PM2 com pasta e endpoints exclusivos, incluindo pipes exclusivos no Windows. Cobrem autenticação, criação de usuários, upload e extração de RAR, validação dos arquivos, persistência dos logs, troca de builds e retorno a uma versão anterior.
+
+Os testes do frontend usam um DOM simulado e respostas de API de teste para verificar a navegação entre as seis áreas, a atualização automática, o bloqueio durante cadastros e o comportamento quando o PM2 está indisponível. Eles não iniciam processos PM2 nem alteram o banco real.

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from './api';
 
-type Panel = 'versions' | 'users' | 'logs';
+export type ManagementPanel = 'versions' | 'users' | 'logs';
 type Version = {
   _id: string; project: string; version: string; originalName: string; size: number;
   createdAt: string; createdBy: string; ecosystem?: string; status: string; error?: string; startedAt?: string;
@@ -17,8 +17,12 @@ const buttonStyle = 'rounded-lg bg-action px-4 py-2 text-sm font-semibold text-o
 const date = (value: string) => new Date(value).toLocaleString('pt-BR');
 const statuses: Record<string, string> = { processing: 'Extraindo', ready: 'Salva', starting: 'Iniciando', started: 'Iniciada', failed: 'Falha' };
 
-export function Management({ onStarted, onSessionExpired }: { onStarted: () => Promise<void>; onSessionExpired: () => void }) {
-  const [panel, setPanel] = useState<Panel | null>(null);
+export function Management({ panel, onStarted, onSessionExpired, onBusyChange }: {
+  panel: ManagementPanel;
+  onStarted: () => Promise<void>;
+  onSessionExpired: () => void;
+  onBusyChange: (busy: boolean) => void;
+}) {
   const [versions, setVersions] = useState<Version[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
@@ -28,6 +32,9 @@ export function Management({ onStarted, onSessionExpired }: { onStarted: () => P
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
+  useEffect(() => () => onBusyChange(false), [onBusyChange]);
 
   const fail = useCallback((reason: unknown) => {
     setError(reason instanceof Error ? reason.message : 'Não foi possível concluir a operação.');
@@ -83,14 +90,8 @@ export function Management({ onStarted, onSessionExpired }: { onStarted: () => P
     finally { setBusy(false); }
   }
 
-  return <section className="mt-6" aria-label="Gerenciamento">
-    <div className="flex flex-wrap gap-2">
-      {([['versions', 'Versões e builds'], ['users', 'Usuários'], ['logs', 'Histórico de logs']] as const).map(([key, title]) =>
-        <button key={key} type="button" aria-expanded={panel === key} aria-controls="management-panel" disabled={busy}
-          onClick={() => { setPanel(panel === key ? null : key); setError(''); setNotice(''); }}
-          className={`rounded-lg border px-4 py-2 text-sm ${panel === key ? 'border-action bg-action text-on-action' : 'border-line bg-surface text-action-secondary hover:bg-hover'}`}>{title}</button>)}
-    </div>
-    {panel && <div id="management-panel" className="mt-3 rounded-2xl border border-line bg-surface p-5">
+  return <section aria-label="Gerenciamento">
+    <div id="management-panel" className="rounded-2xl border border-line bg-surface p-5 sm:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="font-semibold">{panel === 'versions' ? 'Builds versionados' : panel === 'users' ? 'Usuários do painel' : 'Logs salvos'}</h2>
         <button type="button" onClick={load} disabled={loading || busy} className="text-sm text-link hover:text-link-hover disabled:opacity-50">{loading ? 'Carregando…' : 'Atualizar'}</button>
@@ -137,6 +138,6 @@ export function Management({ onStarted, onSessionExpired }: { onStarted: () => P
         </article>)}</div>
         {!loading && !logs.length && <p className="py-6 text-center text-sm text-muted">Nenhum log salvo para este filtro.</p>}
       </>}
-    </div>}
+    </div>
   </section>;
 }

@@ -1,0 +1,27 @@
+import { RefreshCw, Globe, CircleUserRound } from 'lucide-react';
+
+export function Settings({ autoRefresh, onAutoRefreshChange, username }: {
+  autoRefresh: boolean;
+  onAutoRefreshChange: (enabled: boolean) => void;
+  username: string;
+}) {
+  return <div className="settings-content">
+    <section className="settings-card" aria-labelledby="refresh-settings-title">
+      <div className="settings-icon"><RefreshCw size={21} strokeWidth={1.6} aria-hidden="true" /></div>
+      <div><h2 id="refresh-settings-title">Atualização do painel</h2><p>Escolha como acompanhar os indicadores e a lista de processos nesta sessão.</p></div>
+      <label className="refresh-preference">
+        <div><strong>Atualização automática</strong><span>Buscar o estado dos processos a cada 10 segundos.</span></div>
+        <input type="checkbox" checked={autoRefresh} onChange={(event) => onAutoRefreshChange(event.target.checked)} />
+      </label>
+      <p className="settings-note">Você também pode atualizar os dados a qualquer momento pelo botão Atualizar.</p>
+    </section>
+    <section className="settings-card" aria-labelledby="connection-settings-title">
+      <div className="settings-icon"><Globe size={21} strokeWidth={1.6} aria-hidden="true" /></div>
+      <div><h2 id="connection-settings-title">Conexão atual</h2><p>Informações de acesso a este monitor.</p></div>
+      <dl className="connection-details">
+        <div><dt>Endereço do painel</dt><dd>{window.location.origin}</dd></div>
+        <div><dt>Usuário conectado</dt><dd className="flex items-center gap-2"><CircleUserRound size={16} aria-hidden="true" />{username || 'Sessão autenticada'}</dd></div>
+      </dl>
+    </section>
+  </div>;
+}
