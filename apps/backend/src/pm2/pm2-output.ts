@@ -11,6 +11,9 @@ export type Pm2Row = {
     version?: string;
     pm_out_log_path?: string;
     pm_err_log_path?: string;
+    pm_exec_path?: string;
+    pm_cwd?: string;
+    pm_pid_path?: string;
     PORT?: unknown;
     port?: unknown;
     env?: Record<string, unknown>;

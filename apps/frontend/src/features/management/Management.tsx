@@ -1,3 +1,5 @@
+import { dateLocale } from '../../i18n';
+import { t } from "../../i18n";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../services/api";
 
@@ -34,13 +36,14 @@ const inputStyle =
   "mt-1 w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm outline-none focus:border-focus";
 const buttonStyle =
   "rounded-lg bg-action px-4 py-2 text-sm font-semibold text-on-action hover:bg-action-hover disabled:opacity-50";
-const date = (value: string) => new Date(value).toLocaleString("pt-BR");
+const date = (value: string) => new Date(value).toLocaleString(dateLocale());
 const statuses: Record<string, string> = {
   processing: "Extraindo",
   ready: "Salva",
   starting: "Iniciando",
   started: "Iniciada",
   failed: "Falha",
+  deleting: "Excluindo",
 };
 
 export function Management({
@@ -74,7 +77,7 @@ export function Management({
       setError(
         reason instanceof Error
           ? reason.message
-          : "Não foi possível concluir a operação.",
+          : t("Não foi possível concluir a operação."),
       );
       if (reason instanceof ApiError && reason.status === 401)
         onSessionExpired();
@@ -117,7 +120,7 @@ export function Management({
       if (panel === "versions") {
         await api("/api/versions", { method: "POST", body: data });
         setNotice(
-          "Build salvo e versionado. Você já pode baixar o RAR ou iniciar a versão.",
+          t("Build salvo e versionado. Você já pode baixar o arquivo original ou iniciar a versão."),
         );
       } else {
         await api("/api/users", {
@@ -127,7 +130,7 @@ export function Management({
             password: data.get("password"),
           }),
         });
-        setNotice("Usuário criado. Ele já pode entrar no painel.");
+        setNotice(t("Usuário criado. Ele já pode entrar no painel."));
       }
       form.reset();
       await load();
@@ -141,7 +144,7 @@ export function Management({
   async function start(version: Version) {
     if (
       !window.confirm(
-        `Iniciar ${version.project} ${version.version}? Os processos com os mesmos nomes no PM2 serão atualizados para este build.`,
+        t("Iniciar {0} {1}? Os processos com os mesmos nomes no PM2 serão atualizados para este build.", { 0: version.project, 1: version.version }),
       )
     )
       return;
@@ -150,7 +153,7 @@ export function Management({
     setNotice("");
     try {
       await api(`/api/versions/${version._id}/start`, { method: "POST" });
-      setNotice(`Versão ${version.version} enviada ao PM2.`);
+      setNotice(t("Versão {0} enviada ao PM2.", { 0: version.version }));
       await onStarted();
       await load();
     } catch (reason) {
@@ -162,7 +165,7 @@ export function Management({
   }
 
   return (
-    <section aria-label="Gerenciamento">
+    <section aria-label={t("Gerenciamento")}>
       <div
         id="management-panel"
         className="rounded-2xl border border-line bg-surface p-5 sm:p-6"
@@ -170,10 +173,10 @@ export function Management({
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="font-semibold">
             {panel === "versions"
-              ? "Builds versionados"
+              ? t("Builds versionados")
               : panel === "users"
-                ? "Usuários do painel"
-                : "Logs salvos"}
+                ? t("Usuários do painel")
+                : t("Logs salvos")}
           </h2>
           <button
             type="button"
@@ -181,7 +184,7 @@ export function Management({
             disabled={loading || busy}
             className="text-sm text-link hover:text-link-hover disabled:opacity-50"
           >
-            {loading ? "Carregando…" : "Atualizar"}
+            {loading ? t("Carregando…") : t("Atualizar")}
           </button>
         </div>
         {error && (
@@ -203,17 +206,13 @@ export function Management({
         {panel === "versions" && (
           <>
             <p className="mb-4 text-sm text-muted">
-              Envie o build pronto em um arquivo .rar. Cada versão preserva o
-              arquivo original. Para iniciar pelo painel, inclua um
-              ecosystem.config.js com caminhos relativos ao build.
-            </p>
+              {t("Envie o build pronto em ZIP, RAR, 7z, TAR, TAR.GZ, TAR.BZ2 ou TAR.XZ. Cada versão preserva o arquivo original. Para iniciar pelo painel, inclua um ecosystem.config.js com caminhos relativos ao build.")}</p>
             <form
               onSubmit={submit}
               className="mb-5 flex flex-wrap items-end gap-3"
             >
               <label className="min-w-40 flex-1 text-sm">
-                Projeto
-                <input
+                {t("Projeto")}<input
                   name="project"
                   required
                   maxLength={80}
@@ -224,8 +223,7 @@ export function Management({
                 />
               </label>
               <label className="min-w-32 flex-1 text-sm">
-                Versão
-                <input
+                {t("Versão")}<input
                   name="version"
                   required
                   maxLength={80}
@@ -236,29 +234,28 @@ export function Management({
                 />
               </label>
               <label className="min-w-52 flex-1 text-sm">
-                Build .rar
-                <input
+                {t("Build compactado")}<input
                   name="build"
                   type="file"
-                  accept=".rar"
+                  accept=".zip,.rar,.7z,.tar,.tar.gz,.tgz,.tar.bz2,.tbz2,.tbz,.tar.xz,.txz"
                   required
                   disabled={busy}
                   className={inputStyle}
                 />
               </label>
               <button disabled={busy} className={buttonStyle}>
-                {busy ? "Salvando…" : "Salvar versão"}
+                {busy ? t("Salvando…") : t("Salvar versão")}
               </button>
             </form>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[650px] text-left text-sm">
                 <thead className="bg-canvas text-muted">
                   <tr>
-                    <th className="p-3">Projeto / versão</th>
-                    <th>Enviado por</th>
-                    <th>Data</th>
-                    <th>Estado</th>
-                    <th className="text-right">Ações</th>
+                    <th className="p-3">{t("Projeto / versão")}</th>
+                    <th>{t("Enviado por")}</th>
+                    <th>{t("Data")}</th>
+                    <th>{t("Estado")}</th>
+                    <th className="text-right">{t("Ações")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -283,19 +280,18 @@ export function Management({
                         {date(version.createdAt)}
                         {version.startedAt && (
                           <p className="text-xs text-muted">
-                            Última execução: {date(version.startedAt)}
+                            {t("Última execução:")}{" "}{date(version.startedAt)}
                           </p>
                         )}
                       </td>
-                      <td>{statuses[version.status] || version.status}</td>
+                      <td>{t(statuses[version.status] || version.status)}</td>
                       <td className="py-3 text-right">
                         {version.status !== "processing" && (
                           <a
                             className="mr-3 text-link hover:text-link-hover hover:underline"
                             href={`/api/versions/${version._id}/archive`}
                           >
-                            Baixar RAR
-                          </a>
+                            {t("Baixar original")}</a>
                         )}
                         <button
                           type="button"
@@ -303,17 +299,16 @@ export function Management({
                           disabled={
                             busy ||
                             !version.ecosystem ||
-                            ["processing", "starting"].includes(version.status)
+                            ["processing", "starting", "deleting"].includes(version.status)
                           }
                           onClick={() => start(version)}
                           title={
                             version.ecosystem
-                              ? "Iniciar esta versão no PM2"
-                              : "Inclua exatamente um ecosystem.config.js no RAR para iniciar"
+                              ? t("Iniciar esta versão no PM2")
+                              : t("Inclua exatamente um ecosystem.config.js no arquivo compactado para iniciar")
                           }
                         >
-                          Iniciar
-                        </button>
+                          {t("Iniciar")}</button>
                       </td>
                     </tr>
                   ))}
@@ -322,24 +317,20 @@ export function Management({
             </div>
             {!loading && !versions.length && (
               <p className="py-6 text-center text-sm text-muted">
-                Nenhuma versão enviada.
-              </p>
+                {t("Nenhuma versão enviada.")}</p>
             )}
           </>
         )}
         {panel === "users" && (
           <>
             <p className="mb-4 text-sm text-muted">
-              Os usuários cadastrados podem gerenciar processos, versões e criar
-              outros usuários.
-            </p>
+              {t("Os usuários cadastrados podem gerenciar processos, versões e criar outros usuários.")}</p>
             <form
               onSubmit={submit}
               className="mb-5 flex flex-wrap items-end gap-3"
             >
               <label className="min-w-40 flex-1 text-sm">
-                Usuário
-                <input
+                {t("Usuário")}<input
                   name="username"
                   autoComplete="off"
                   required
@@ -351,8 +342,7 @@ export function Management({
                 />
               </label>
               <label className="min-w-52 flex-1 text-sm">
-                Senha (mínimo 12 caracteres)
-                <input
+                {t("Senha (mínimo 12 caracteres)")}<input
                   name="password"
                   type="password"
                   autoComplete="new-password"
@@ -364,7 +354,7 @@ export function Management({
                 />
               </label>
               <button disabled={busy} className={buttonStyle}>
-                {busy ? "Criando…" : "Criar usuário"}
+                {busy ? t("Criando…") : t("Criar usuário")}
               </button>
             </form>
             <ul className="divide-y divide-line">
@@ -375,7 +365,7 @@ export function Management({
                 >
                   <strong>{user.username}</strong>
                   <span className="text-muted">
-                    Criado em {date(user.createdAt)}
+                    {t("Criado em")}{" "}{date(user.createdAt)}
                   </span>
                 </li>
               ))}
@@ -386,20 +376,18 @@ export function Management({
           <>
             <div className="mb-4 flex flex-wrap items-end gap-3">
               <label className="text-sm">
-                Tipo
-                <select
+                {t("Tipo")}<select
                   value={kind}
                   onChange={(event) => setKind(event.target.value)}
                   className={inputStyle}
                 >
-                  <option value="audit">Ações do painel</option>
-                  <option value="process">Saída dos processos</option>
+                  <option value="audit">{t("Ações do painel")}</option>
+                  <option value="process">{t("Saída dos processos")}</option>
                 </select>
               </label>
               {kind === "process" && (
                 <label className="text-sm">
-                  ID do processo (opcional)
-                  <input
+                  {t("ID do processo (opcional)")}<input
                     type="number"
                     min="0"
                     step="1"
@@ -411,9 +399,7 @@ export function Management({
               )}
             </div>
             <p className="mb-3 text-xs text-muted">
-              Últimos 100 registros. A saída dos processos é coletada a cada 5
-              segundos.
-            </p>
+              {t("Últimos 100 registros. A saída dos processos é coletada a cada 5 segundos.")}</p>
             <div className="max-h-[500px] space-y-3 overflow-auto">
               {logs.map((log) => (
                 <article
@@ -423,7 +409,7 @@ export function Management({
                   <div className="flex flex-wrap justify-between gap-2">
                     <strong>
                       {log.kind === "audit"
-                        ? `${log.username || "Sem sessão"} · ${log.method} ${log.path} · HTTP ${log.status}`
+                        ? `${log.username || t("Sem sessão")} · ${log.method} ${log.path} · HTTP ${log.status}`
                         : `${log.processName} · processo ${log.processId}`}
                     </strong>
                     <time className="text-xs text-muted">
@@ -447,8 +433,7 @@ export function Management({
             </div>
             {!loading && !logs.length && (
               <p className="py-6 text-center text-sm text-muted">
-                Nenhum log salvo para este filtro.
-              </p>
+                {t("Nenhum log salvo para este filtro.")}</p>
             )}
           </>
         )}

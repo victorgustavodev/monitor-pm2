@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import {
   Ban,
   Play,
@@ -29,12 +30,12 @@ export function ProcessActions({
   return (
     <div
       className={`process-actions ${spread ? "process-actions-spread" : ""}`}
-      aria-label={`Ações de ${process.name}`}
+      aria-label={t("Ações de {0}", { 0: process.name })}
     >
       <button
         type="button"
-        title="Logs"
-        aria-label={`Ver logs de ${process.name}`}
+        title={t("Logs")}
+        aria-label={t("Ver logs de {0}", { 0: process.name })}
         disabled={busy !== null}
         onClick={() => onLogs(process)}
         className="process-action hover:bg-hover hover:text-link-hover"
@@ -43,8 +44,8 @@ export function ProcessActions({
       </button>
       <button
         type="button"
-        title="Reiniciar"
-        aria-label={`Reiniciar ${process.name}`}
+        title={t("Reiniciar")}
+        aria-label={t("Reiniciar {0}", { 0: process.name })}
         disabled={busy !== null}
         onClick={() => onAction(process, "restart")}
         className="process-action hover:bg-hover hover:text-link-hover"
@@ -53,8 +54,8 @@ export function ProcessActions({
       </button>
       <button
         type="button"
-        title={running ? "Parar" : "Iniciar"}
-        aria-label={`${running ? "Parar" : "Iniciar"} ${process.name}`}
+        title={running ? t("Parar") : t("Iniciar")}
+        aria-label={`${running ? t("Parar") : t("Iniciar")} ${process.name}`}
         disabled={busy !== null}
         onClick={() => onAction(process, running ? "stop" : "start")}
         className={`process-action ${running ? "hover:bg-warning-surface hover:text-warning" : "hover:bg-success-surface hover:text-success"}`}
@@ -67,8 +68,8 @@ export function ProcessActions({
       </button>
       <button
         type="button"
-        title="Remover"
-        aria-label={`Remover ${process.name}`}
+        title={t("Remover")}
+        aria-label={t("Remover {0}", { 0: process.name })}
         disabled={busy !== null}
         onClick={() => onAction(process, "delete")}
         className="process-action hover:bg-danger-surface hover:text-danger"
@@ -78,7 +79,7 @@ export function ProcessActions({
       {busy === process.id && (
         <span className="process-action-progress" role="status">
           <RefreshCw size={16} className="animate-spin" aria-hidden="true" />
-          <span className="sr-only">Executando ação em {process.name}…</span>
+          <span className="sr-only">{t("Executando ação em")}{" "}{process.name}…</span>
         </span>
       )}
     </div>
@@ -95,11 +96,11 @@ export function ProcessStatus({
   const label =
     (
       {
-        online: "Online",
-        stopped: "Parado",
-        errored: "Erro",
-        launching: "Iniciando",
-        stopping: "Parando",
+        online: t("Online"),
+        stopped: t("Parado"),
+        errored: t("Erro"),
+        launching: t("Iniciando"),
+        stopping: t("Parando"),
       } as Record<string, string>
     )[status] || status;
   const color =
@@ -145,28 +146,28 @@ export function ProcessPort({
   const hasPort = Boolean(process.ports?.length);
   const title =
     process.portSource === "listening"
-      ? "Portas TCP em escuta neste processo ou em seus subprocessos"
+      ? t("Portas TCP em escuta neste processo ou em seus subprocessos")
       : process.portSource === "configured"
-        ? "Porta informada na configuração; não confirmada em escuta"
-        : "Porta não identificada";
+        ? t("Porta informada na configuração; não confirmada em escuta")
+        : t("Porta não identificada");
   return (
     <div className="process-port" title={title}>
       <span>
         {withLabel
           ? hasPort
-            ? `${process.ports.length > 1 ? "Portas" : "Porta"} `
-            : "Porta não identificada"
+            ? `${process.ports.length > 1 ? t("Portas") : t("Porta")} `
+            : t("Porta não identificada")
           : null}
         {hasPort ? (
           <span className="font-mono tabular-nums">
-            {process.ports.join(", ")}
+            {process.ports.join(', ')}
           </span>
         ) : !withLabel ? (
           "—"
         ) : null}
       </span>
       {process.portSource === "configured" && (
-        <span className="process-port-note">Configurada</span>
+        <span className="process-port-note">{t("Configurada")}</span>
       )}
     </div>
   );

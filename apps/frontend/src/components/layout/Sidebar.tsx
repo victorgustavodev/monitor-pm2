@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import {
   LayoutDashboard,
   Server,
@@ -7,12 +8,14 @@ import {
   Settings,
   LogOut,
   CircleUserRound,
+  FolderGit2,
 } from "lucide-react";
 import Logo from "../../assets/logo.png";
 
 export type DashboardView =
   | "overview"
   | "processes"
+  | "projects"
   | "logs"
   | "users"
   | "builds"
@@ -30,6 +33,12 @@ export const dashboardViews = [
     label: "Processos",
     description: "Monitore portas, recursos e operações de cada aplicação.",
     icon: Server,
+  },
+  {
+    id: "projects",
+    label: "Projetos",
+    description: "Explore os arquivos das aplicações e publique novas versões.",
+    icon: FolderGit2,
   },
   {
     id: "logs",
@@ -75,7 +84,7 @@ export function Sidebar({
   onLogout: () => void;
 }) {
   return (
-    <aside className="dashboard-sidebar" aria-label="Menu do monitor">
+    <aside className="dashboard-sidebar" aria-label={t("Menu do monitor")}>
       <div className="sidebar-brand">
         <img
           src={Logo}
@@ -85,12 +94,12 @@ export function Sidebar({
           className="sidebar-logo"
         />
         <div className="sidebar-product">
-          <strong>Monitor PM2</strong>
-          <span>Gerenciamento de aplicações</span>
+          <strong>{t("Monitor PM2")}</strong>
+          <span>{t("Gerenciamento de aplicações")}</span>
         </div>
       </div>
-      <p className="sidebar-label">Navegação</p>
-      <nav className="sidebar-nav" aria-label="Navegação principal">
+      <p className="sidebar-label">{t("Navegação")}</p>
+      <nav className="sidebar-nav" aria-label={t("Navegação principal")}>
         {dashboardViews.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -101,7 +110,7 @@ export function Sidebar({
             onClick={() => onNavigate(id)}
           >
             <Icon size={19} strokeWidth={1.7} aria-hidden="true" />
-            <span>{label}</span>
+            <span>{t(label)}</span>
             {id === "processes" && (
               <span className="sidebar-count">{count}</span>
             )}
@@ -112,8 +121,8 @@ export function Sidebar({
         <div className="sidebar-account">
           <CircleUserRound size={30} strokeWidth={1.4} aria-hidden="true" />
           <div>
-            <strong>{username || "Usuário conectado"}</strong>
-            <span>Sessão ativa</span>
+            <strong>{username || t("Usuário conectado")}</strong>
+            <span>{t("Sessão ativa")}</span>
           </div>
         </div>
         <button
@@ -121,10 +130,10 @@ export function Sidebar({
           className="sidebar-logout"
           onClick={onLogout}
           disabled={busy}
-          aria-label="Sair do painel"
+          aria-label={t("Sair do painel")}
         >
           <LogOut size={18} aria-hidden="true" />
-          <span>Sair do painel</span>
+          <span>{t("Sair do painel")}</span>
         </button>
       </div>
     </aside>

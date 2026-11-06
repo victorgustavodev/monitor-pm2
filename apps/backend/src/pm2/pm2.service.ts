@@ -6,6 +6,19 @@ import { env } from "../common/config";
 import { HttpError } from "../common/http-error";
 import { parsePm2Output } from "./pm2-output";
 import { inspectProcessPorts, type ProcessPorts } from "./process-ports";
+import { withArtifactAccess } from "../common/artifact-access";
+import { homedir } from 'node:os';
+import { collectArtifactPaths, savedArtifactPaths } from './artifact-paths';
+
+export const startEcosystem = (
+  ...args: Parameters<typeof startEcosystemInternal>
+) => withArtifactAccess(() => startEcosystemInternal(...args));
+export const deployEcosystem = (
+  ...args: Parameters<typeof deployEcosystemInternal>
+) => withArtifactAccess(() => deployEcosystemInternal(...args));
+export const processAction = (
+  ...args: Parameters<typeof processActionInternal>
+) => withArtifactAccess(() => processActionInternal(...args));
 
 const execFileAsync = promisify(execFile);
 export type ProcessAction = "start" | "restart" | "stop" | "delete";
@@ -46,7 +59,7 @@ async function run(args: string[], cwd?: string) {
   }
 }
 
-export async function startEcosystem(rawPath: unknown): Promise<void> {
+async function startEcosystemInternal(rawPath: unknown): Promise<void> {
   if (typeof rawPath !== "string" || !isAbsolute(rawPath.trim())) {
     throw new HttpError(
       400,
@@ -70,7 +83,7 @@ export async function startEcosystem(rawPath: unknown): Promise<void> {
   await run(["save", "--force"]);
 }
 
-export async function deployEcosystem(path: string): Promise<void> {
+async function deployEcosystemInternal(path: string): Promise<void> {
   const extension = extname(__filename);
   const args =
     extension === ".ts" ? ["--require", require.resolve("tsx/cjs")] : [];
@@ -191,7 +204,13 @@ async function assertExists(id: number) {
   }
 }
 
-export async function processAction(
+export async function processArtifactPaths(): Promise<string[]> {
+  const rows = await processRows();
+  return [...collectArtifactPaths(rows.map((row) => row.pm2_env)),
+    ...await savedArtifactPaths(env.pm2Home || resolve(homedir(), '.pm2'))];
+}
+
+async function processActionInternal(
   id: number,
   action: ProcessAction,
 ): Promise<void> {

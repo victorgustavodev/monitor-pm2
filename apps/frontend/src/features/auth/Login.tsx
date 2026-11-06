@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { useState, type FormEvent } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import Logo from "../../assets/logo.png";
@@ -29,7 +30,7 @@ export function Login({
       });
       await onLogin();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Falha no login");
+      setError(reason instanceof Error ? reason.message : t("Falha no login"));
     } finally {
       setLoading(false);
     }
@@ -52,18 +53,15 @@ export function Login({
             id="login-title"
             className="text-2xl font-semibold tracking-tight text-heading"
           >
-            Acesse o painel
-          </h2>
+            {t("Acesse o painel")}</h2>
           <p className="mt-2 text-sm leading-6 text-muted">
-            Realizar login para acessar o monitoramento de processos PM2.
-          </p>
+            {t("Realizar login para acessar o monitoramento de processos PM2.")}</p>
           <form onSubmit={submit} className="mt-8 space-y-4">
             <label className="block text-sm font-medium text-content">
-              Usuário
-              <input
+              {t("Usuário")}<input
                 name="username"
                 autoComplete="username"
-                placeholder="Digite seu usuário"
+                placeholder={t("Digite seu usuário")}
                 required
                 className="login-input mt-2"
               />
@@ -73,22 +71,21 @@ export function Login({
                 htmlFor="login-password"
                 className="block text-sm font-medium text-content"
               >
-                Senha
-              </label>
+                {t("Senha")}</label>
               <div className="relative mt-2">
                 <input
                   id="login-password"
                   name="password"
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
-                  placeholder="Digite sua senha"
+                  placeholder={t("Digite sua senha")}
                   required
                   className="login-input login-password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((visible) => !visible)}
-                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                  aria-label={showPassword ? t("Ocultar senha") : t("Mostrar senha")}
                   aria-pressed={showPassword}
                   aria-controls="login-password"
                   className="login-password-toggle"
@@ -108,8 +105,7 @@ export function Login({
                 className="rounded-lg border border-danger-line bg-danger-surface px-4 py-3 text-sm text-danger"
               >
                 <p className="font-semibold">
-                  Não foi possível acessar o painel
-                </p>
+                  {t("Não foi possível acessar o painel")}</p>
                 <p className="mt-1 break-words leading-5">{visibleError}</p>
               </div>
             )}
@@ -117,7 +113,7 @@ export function Login({
               disabled={loading}
               className="h-12 w-full rounded-lg bg-action px-4 text-sm font-semibold text-on-action transition-colors duration-150 hover:bg-action-hover disabled:opacity-50"
             >
-              {loading ? "Entrando…" : "Entrar"}
+              {loading ? t("Entrando…") : t("Entrar")}
             </button>
           </form>
         </div>

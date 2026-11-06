@@ -1,5 +1,9 @@
 # Cores e tokens de design
 
+## Projetos e builds
+
+As telas de projetos usam `apps/frontend/src/styles/projects.css`, com os mesmos tokens semânticos do painel. Cards apresentam nome, pasta e contagem de builds; o detalhe usa abas Arquivos, Builds e Sobre o projeto. O navegador de arquivos combina breadcrumbs, tabela com rolagem horizontal e prévia de texto. O histórico mostra autor, comentário, data, estado e indicação textual do build ativo. Formulários e ações de publicação mostram estado pendente e bloqueiam interações conflitantes. Os cards e formulários passam para uma coluna em telas pequenas.
+
 As cores da interface ficam em [`tokens.css`](../apps/frontend/src/styles/tokens.css). A paleta KPMG mantém azul `#00338D`, cobalto `#1E49E2` e branco como cores predominantes. As outras cores da marca são referências disponíveis; feedback de sucesso, atenção e erro tem uma paleta funcional própria.
 
 ## Organização
@@ -47,7 +51,7 @@ Estados devem continuar identificáveis por texto ou ícone, além da cor. Mante
 
 ## Navegação e layout
 
-O painel autenticado usa uma sidebar azul com a logo branca, o usuário conectado e seis áreas: visão geral, processos, logs, usuários, builds e configurações. `components/layout/Sidebar.tsx` centraliza os destinos; `app/App.tsx` controla a área ativa. As telas ficam em `features/`, os estilos globais em `styles/global.css` e a tela de login em `features/auth/Login.tsx`. O estado ativo, o hover, os ícones e o foco de teclado da navegação usam os tokens `--ds-color-navigation-*` e `--ds-color-shell-*`.
+O painel autenticado usa uma sidebar azul com a logo branca, o usuário conectado e sete áreas: visão geral, processos, projetos, logs, usuários, builds e configurações. `components/layout/Sidebar.tsx` centraliza os destinos; `app/App.tsx` controla a área ativa. As telas ficam em `features/`, os estilos globais em `styles/global.css` e a tela de login em `features/auth/Login.tsx`. O estado ativo, o hover, os ícones e o foco de teclado da navegação usam os tokens `--ds-color-navigation-*` e `--ds-color-shell-*`.
 
 Em desktop, a sidebar permanece visível enquanto o conteúdo rola. Em telas menores que 768 px, ela vira uma barra superior com navegação horizontal. O conteúdo mantém largura flexível e tabelas rolam dentro do próprio card. O atalho “Ir para o conteúdo” permite pular a navegação usando o teclado.
 

@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { Box, CirclePlus } from "lucide-react";
 import { ProcessActions, ProcessPort, ProcessStatus } from "./ProcessDisplay";
 import {
@@ -26,7 +27,7 @@ export function ProcessCards({
         <article
           key={process.id}
           className="application-card"
-          aria-label={`Aplicação ${process.name}`}
+          aria-label={t("Aplicação {0}", { 0: process.name })}
         >
           <div className="application-card-top">
             <Box
@@ -48,15 +49,15 @@ export function ProcessCards({
               <dd>{process.cpu.toFixed(1)}%</dd>
             </div>
             <div>
-              <dt>Memória</dt>
+              <dt>{t("Memória")}</dt>
               <dd>{formatMemory(process.memory)}</dd>
             </div>
           </dl>
           <div className="application-card-details">
-            <span>Uptime {formatUptime(process.uptime)}</span>
+            <span>{t("Uptime")}{" "}{formatUptime(process.uptime)}</span>
             <span>
               {process.restarts}{" "}
-              {process.restarts === 1 ? "reinício" : "reinícios"}
+              {process.restarts === 1 ? t("reinício") : t("reinícios")}
             </span>
           </div>
           <ProcessActions
@@ -72,10 +73,10 @@ export function ProcessCards({
         type="button"
         className="application-add-card"
         onClick={onAdd}
-        aria-label="Adicionar novo processo"
+        aria-label={t("Adicionar novo processo")}
       >
         <CirclePlus size={26} strokeWidth={1.5} aria-hidden="true" />
-        <span>Novo processo</span>
+        <span>{t("Novo processo")}</span>
       </button>
     </div>
   );

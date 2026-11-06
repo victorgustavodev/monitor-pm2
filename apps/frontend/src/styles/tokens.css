@@ -46,14 +46,34 @@
   --ds-color-shell-accent: var(--palette-kpmg-cobalt);
   --ds-color-on-brand: var(--palette-white);
   --ds-color-shell-muted: var(--palette-kpmg-light-blue);
-  --ds-color-shell-line: color-mix(in srgb, var(--palette-white) 25%, transparent);
-  --ds-color-shell-hover: color-mix(in srgb, var(--palette-white) 10%, transparent);
-  --ds-color-navigation-active: color-mix(in srgb, var(--palette-white) 16%, var(--ds-color-shell));
+  --ds-color-shell-line: color-mix(
+    in srgb,
+    var(--palette-white) 25%,
+    transparent
+  );
+  --ds-color-shell-hover: color-mix(
+    in srgb,
+    var(--palette-white) 10%,
+    transparent
+  );
+  --ds-color-navigation-active: color-mix(
+    in srgb,
+    var(--palette-white) 16%,
+    var(--ds-color-shell)
+  );
   --ds-color-navigation-focus: var(--palette-kpmg-light-blue);
-  --ds-color-navigation-icon: color-mix(in srgb, var(--palette-white) 78%, transparent);
+  --ds-color-navigation-icon: color-mix(
+    in srgb,
+    var(--palette-white) 78%,
+    transparent
+  );
   --ds-color-backdrop-base: var(--palette-kpmg-blue);
   --ds-color-backdrop-accent: var(--palette-kpmg-cobalt);
-  --ds-color-overlay: color-mix(in srgb, var(--palette-kpmg-dark-blue) 50%, transparent);
+  --ds-color-overlay: color-mix(
+    in srgb,
+    var(--palette-kpmg-dark-blue) 50%,
+    transparent
+  );
   --ds-color-selection: var(--palette-kpmg-light-blue);
   --ds-color-on-selection: var(--palette-kpmg-blue);
 
@@ -69,13 +89,29 @@
   --ds-color-danger-line: var(--palette-red-200);
 
   /* Efeitos também usam referências da paleta. */
-  --ds-color-decoration-line: color-mix(in srgb, var(--palette-white) 13%, transparent);
-  --ds-color-decoration-halo: color-mix(in srgb, var(--palette-white) 3%, transparent);
-  --ds-color-decoration-halo-subtle: color-mix(in srgb, var(--palette-white) 2%, transparent);
-  --ds-shadow-card: 0 2px 3px color-mix(in srgb, var(--palette-kpmg-blue) 7%, transparent);
-  --ds-shadow-login: 0 24px 64px -16px color-mix(in srgb, var(--palette-kpmg-dark-blue) 35%, transparent);
-  --ds-shadow-dialog: 0 24px 48px -12px color-mix(in srgb, var(--palette-kpmg-dark-blue) 30%, transparent);
-  --ds-shadow-focus: 0 0 0 3px color-mix(in srgb, var(--ds-color-focus) 14%, transparent);
+  --ds-color-decoration-line: color-mix(
+    in srgb,
+    var(--palette-white) 13%,
+    transparent
+  );
+  --ds-color-decoration-halo: color-mix(
+    in srgb,
+    var(--palette-white) 3%,
+    transparent
+  );
+  --ds-color-decoration-halo-subtle: color-mix(
+    in srgb,
+    var(--palette-white) 2%,
+    transparent
+  );
+  --ds-shadow-card: 0 2px 3px
+    color-mix(in srgb, var(--palette-kpmg-blue) 7%, transparent);
+  --ds-shadow-login: 0 24px 64px -16px
+    color-mix(in srgb, var(--palette-kpmg-dark-blue) 35%, transparent);
+  --ds-shadow-dialog: 0 24px 48px -12px
+    color-mix(in srgb, var(--palette-kpmg-dark-blue) 30%, transparent);
+  --ds-shadow-focus: 0 0 0 3px
+    color-mix(in srgb, var(--ds-color-focus) 14%, transparent);
 }
 
 /* Adaptador Tailwind v4. "inline" mantém os aliases resolvidos no consumidor. */

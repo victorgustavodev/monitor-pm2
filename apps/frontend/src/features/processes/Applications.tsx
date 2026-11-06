@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { useMemo, useState } from "react";
 import { CircleOff, Search, List, LayoutGrid } from "lucide-react";
 import { ProcessTable } from "./ProcessTable";
@@ -62,12 +63,12 @@ export function Applications({
     >
       <div className="applications-toolbar">
         <div className="applications-heading">
-          <h2 id="applications-title">Aplicações</h2>
+          <h2 id="applications-title">{t("Aplicações")}</h2>
           <span className="applications-count">
             {query
-              ? `${filtered.length} de ${processes.length}`
+              ? `${filtered.length} ${t('de')} ${processes.length}`
               : processes.length}{" "}
-            {processes.length === 1 ? "processo" : "processos"}
+            {t(processes.length === 1 ? 'processo' : 'processos')}
           </span>
         </div>
         <div className="applications-controls">
@@ -76,14 +77,14 @@ export function Applications({
             <input
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
-              placeholder="Buscar processo"
-              aria-label="Buscar processo"
+              placeholder={t("Buscar processo")}
+              aria-label={t("Buscar processo")}
             />
           </label>
           <div
             className="application-layout-selector"
             role="group"
-            aria-label="Visualização das aplicações"
+            aria-label={t("Visualização das aplicações")}
           >
             <button
               type="button"
@@ -91,16 +92,14 @@ export function Applications({
               onClick={() => changeLayout("list")}
             >
               <List size={16} aria-hidden="true" />
-              Lista
-            </button>
+              {t("Lista")}</button>
             <button
               type="button"
               aria-pressed={layout === "cards"}
               onClick={() => changeLayout("cards")}
             >
               <LayoutGrid size={16} aria-hidden="true" />
-              Cards
-            </button>
+              {t("Cards")}</button>
           </div>
         </div>
       </div>
@@ -109,8 +108,8 @@ export function Applications({
           <CircleOff size={28} aria-hidden="true" />
           <p>
             {query
-              ? "Nenhum processo corresponde à busca."
-              : "Nenhum processo encontrado."}
+              ? t("Nenhum processo corresponde à busca.")
+              : t("Nenhum processo encontrado.")}
           </p>
         </div>
       )}

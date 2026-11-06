@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import {
   Activity,
   Cpu,
@@ -10,6 +11,7 @@ import {
   Server,
 } from "lucide-react";
 import { formatMemory, type Process } from "../processes/processes";
+import { ProcessPort } from '../processes/ProcessDisplay';
 
 export function Overview({
   processes,
@@ -27,34 +29,34 @@ export function Overview({
   const memory = processes.reduce((total, item) => total + item.memory, 0);
   const metrics = [
     {
-      label: "Processos online",
+      label: t("Processos online"),
       value: `${online}/${processes.length}`,
-      detail: "Aplicações em execução",
+      detail: t("Aplicações em execução"),
       icon: Activity,
     },
     {
-      label: "CPU total",
+      label: t("CPU total"),
       value: `${cpu.toFixed(1)}%`,
-      detail: "Consumo dos processos",
+      detail: t("Consumo dos processos"),
       icon: Cpu,
     },
     {
-      label: "Memória utilizada",
+      label: t("Memória utilizada"),
       value: formatMemory(memory),
-      detail: "Total das aplicações",
+      detail: t("Total das aplicações"),
       icon: MemoryStick,
     },
     {
-      label: "Daemon PM2",
-      value: connected ? "Conectado" : loading ? "Conectando…" : "Indisponível",
-      detail: "Conexão com o gerenciador",
+      label: t("Daemon PM2"),
+      value: connected ? t("Conectado") : loading ? t("Conectando…") : t("Indisponível"),
+      detail: t("Conexão com o gerenciador"),
       icon: Database,
     },
   ];
 
   return (
     <div className="overview-content">
-      <section className="overview-metrics" aria-label="Indicadores da VM">
+      <section className="overview-metrics" aria-label={t("Indicadores da VM")}>
         {metrics.map(({ label, value, detail, icon: Icon }) => (
           <article key={label} className="metric-card">
             <div className="metric-top">
@@ -64,7 +66,7 @@ export function Overview({
               </div>
             </div>
             <p
-              className={`metric-value ${label === "Daemon PM2" ? "metric-value-status" : ""}`}
+              className={`metric-value ${label === t("Daemon PM2") ? "metric-value-status" : ""}`}
             >
               {value}
             </p>
@@ -78,33 +80,24 @@ export function Overview({
       >
         <div className="section-heading">
           <div>
-            <h2 id="overview-processes-title">Processos</h2>
-            <p>Suas aplicações, em um só lugar.</p>
+            <h2 id="overview-processes-title">{t("Processos")}</h2>
+            <p>{t("Suas aplicações, em um só lugar.")}</p>
           </div>
           <button type="button" onClick={onProcesses} className="section-link">
-            Ver todos
-            <ChevronRight size={16} aria-hidden="true" />
+            {t("Ver todos")}<ChevronRight size={16} aria-hidden="true" />
           </button>
         </div>
         {processes.slice(0, 6).map((process) => (
-          <button
+          <article
             key={process.id}
-            type="button"
             className="overview-process"
-            onClick={onProcesses}
-            aria-label={`Ver processo ${process.name}, status ${process.status}`}
           >
             <div className="process-app-icon">
               <Server size={19} strokeWidth={1.6} aria-hidden="true" />
             </div>
             <div className="overview-process-name">
-              <strong>{process.name}</strong>
-              <span>
-                {process.mode} ·{" "}
-                {process.ports?.length
-                  ? `Porta ${process.ports.join(", ")}${process.portSource === "configured" ? " (configurada)" : ""}`
-                  : "Porta não identificada"}
-              </span>
+              <button type="button" onClick={onProcesses}><strong>{process.name}</strong></button>
+              <ProcessPort process={process} withLabel />
             </div>
             <span
               className={`overview-process-status ${process.status === "online" ? "text-success" : process.status === "stopped" ? "text-muted" : "text-warning"}`}
@@ -118,22 +111,22 @@ export function Overview({
               )}
               <span>
                 {process.status === "online"
-                  ? "Online"
+                  ? t("Online")
                   : process.status === "stopped"
-                    ? "Parado"
+                    ? t("Parado")
                     : process.status}
               </span>
             </span>
-            <ChevronRight size={16} className="text-muted" aria-hidden="true" />
-          </button>
+            <button type="button" onClick={onProcesses} aria-label={t('Ver processo {0}, status {1}', { 0: process.name, 1: process.status })}><ChevronRight size={16} className="text-muted" aria-hidden="true" /></button>
+          </article>
         ))}
         {!processes.length && (
           <div className="overview-empty">
             <Server size={30} strokeWidth={1.4} aria-hidden="true" />
             <p>
               {loading
-                ? "Carregando aplicações…"
-                : "Nenhum processo encontrado."}
+                ? t("Carregando aplicações…")
+                : t("Nenhum processo encontrado.")}
             </p>
           </div>
         )}

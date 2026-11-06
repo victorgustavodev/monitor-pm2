@@ -4,13 +4,17 @@ Painel web para visualizar e operar processos do PM2 em uma VM Windows. O fronte
 
 ## Funcionalidades
 
-- Navegação lateral com visão geral, processos, logs, usuários, builds e configurações; em celular, a navegação fica no topo.
+- Navegação lateral com visão geral, processos, projetos, logs, usuários, builds e configurações; em celular, a navegação fica no topo.
+- Projetos com navegação pelos arquivos da VM, visualização de texto, download e histórico de builds com autor e comentário obrigatório.
+- Publicação de builds na pasta cadastrada do projeto, execução do ecosystem PM2 e possibilidade de republicar versões anteriores.
+- Limpeza automática opcional, com prazo de retenção e intervalo configuráveis, preservando builds ativos e arquivos referenciados pelo PM2.
+- Interface em português do Brasil, inglês e espanhol, selecionável em Configurações.
 - Lista status, PID, portas TCP, CPU, memória, uptime e reinícios dos processos.
 - Atualiza métricas e processos por SSE, sem consultas periódicas do navegador.
 - Permite alternar as aplicações entre lista e cards, mantendo a busca e as ações nos dois formatos e salvando a preferência no navegador.
 - Inicia, para, reinicia e remove processos; também permite iniciar um ecosystem já existente na VM.
-- Aceita builds prontos em `.rar`, identifica projeto e versão, preserva o arquivo original e extrai os arquivos em `versions/`.
-- Permite baixar o RAR original e iniciar qualquer versão salva no PM2, inclusive uma versão anterior.
+- Aceita builds prontos em `.zip`, `.rar`, `.7z`, `.tar`, `.tar.gz`, `.tar.bz2` e `.tar.xz` (incluindo os aliases `.tgz`, `.tbz`, `.tbz2` e `.txz`), identifica projeto e versão, preserva o arquivo original e extrai os arquivos em `versions/`.
+- Permite baixar o arquivo compactado original e iniciar qualquer versão salva no PM2, inclusive uma versão anterior.
 - Cria usuários no MongoDB, com senha protegida por scrypt e salt individual.
 - Mantém sessão de 8 horas em cookie `HttpOnly` e registra ações do painel no MongoDB.
 - Coleta a saída dos processos PM2 a cada 5 segundos e mantém o histórico no MongoDB.
@@ -56,6 +60,7 @@ apps/
         management/
         overview/
         processes/
+        projects/
         settings/
       services/    # Cliente HTTP da API
       styles/      # CSS global e tokens do design system
@@ -68,7 +73,8 @@ apps/
       common/    # Configuração, acesso ao banco e erros HTTP
       logs/      # Coleta e persistência de logs
       pm2/       # Operações, métricas, SSE, portas e worker de deploy
-      versions/  # Builds RAR, versões e worker de extração
+      projects/  # Projetos, arquivos locais, histórico e publicação de builds
+      versions/  # Builds compactados, versões e worker de extração
       main.ts    # Rotas Express e inicialização da API
     dist/     # Build gerado pelo TypeScript
 ```
@@ -104,7 +110,19 @@ Se houver IIS ou outro proxy reverso, desabilite o buffering e a compressão par
 
 A coluna **Porta** prioriza as portas TCP em escuta no Windows, associadas ao PID do processo PM2 e aos seus subprocessos. Portas repetidas em IPv4/IPv6 aparecem uma única vez; aplicações com vários listeners exibem todas as portas. A inspeção é compartilhada por 5 segundos para evitar consultas repetidas ao sistema.
 
+Visão geral, lista e cards exibem somente os números das portas, sem links de acesso ou descoberta de IP/DNS.
+
 Quando não há uma porta confirmada em escuta ou a inspeção não está disponível, o painel pode mostrar a porta declarada em `PORT`, `port`, `env.PORT` ou nos argumentos `--port`/`-p`, com a indicação **Configurada**. Processos sem informação suficiente exibem `—`. A coluna mostra portas locais da aplicação; o endereço e a porta de publicação de um proxy reverso continuam definidos na infraestrutura.
+
+## Idiomas e limpeza automática
+
+Em **Configurações → Idioma**, escolha português do Brasil, inglês ou espanhol. A preferência fica neste navegador e não encerra a sessão. O catálogo de traduções fica em `apps/frontend/src/i18n/messages.ts`; frases em português são as chaves, com traduções `en` e `es`. Datas acompanham o idioma. Conteúdo dos projetos, comentários, nomes, logs e diagnósticos técnicos externos permanecem no idioma original. Consulte [internacionalização](docs/i18n.md) para ampliar o catálogo.
+
+Em **Limpeza automática de versões**, habilite a função, informe **Manter versões por (dias)** e **Executar limpeza a cada (horas)** e salve. Ela começa desabilitada; os valores iniciais são 30 dias e 24 horas. A configuração é compartilhada e persistida no MongoDB. A primeira execução fica agendada a partir do salvamento; o backend verifica o agendamento a cada minuto e retoma execuções vencidas após reiniciar.
+
+A limpeza remove permanentemente registros antigos e seus pacotes, extrações e backups em `VERSIONS_DIR`. Preserva o build ativo de cada projeto, operações em andamento, projetos com recuperação pendente e arquivos referenciados pelos processos PM2 (inclusive parados) ou pelas listas salvas `dump.pm2` e `dump.pm2.bak`. Se o PM2 estiver indisponível ou seus caminhos não puderem ser verificados, a limpeza é adiada e o erro aparece nas configurações. A pasta principal das aplicações não é removida. Publicações e limpeza são mutuamente exclusivas; execute uma única instância do backend.
+
+Os campos de última e próxima execução permitem acompanhar o agendamento. O resultado também é registrado como auditoria `RETENTION`. Desabilitar e salvar cancela futuras execuções. Não é usado TTL do MongoDB, pois remover somente o documento deixaria arquivos no disco.
 
 ## Design system
 
@@ -116,16 +134,28 @@ Na primeira inicialização, se a coleção `users` estiver vazia, o monitor cri
 
 Na área **Usuários** do painel é possível listar e criar usuários. Todos os usuários têm acesso à administração dos processos, versões, logs e ao cadastro de outros usuários. Não há cadastro público. Nomes de usuário são salvos em minúsculas e não podem se repetir.
 
-## Builds e versões
+## Projetos e builds
 
-1. Gere o build do projeto e empacote os arquivos prontos para execução em um único `.rar`, sem senha e sem divisão em volumes.
-2. Abra **Versões e builds**, informe o projeto e a versão (por exemplo, `minha-app` e `1.2.0`) e selecione o arquivo.
+1. Abra **Projetos → Novo projeto** e informe nome, pasta principal absoluta na VM (por exemplo, `C:\servicos\ProjetoX`) e caminho relativo do `ecosystem.config.js` dentro dela.
+2. Abra o projeto para navegar em **Arquivos**, consultar **Builds** ou conferir os caminhos em **Sobre o projeto**. O acesso é direto ao sistema de arquivos da mesma VM, sem FTP.
+3. Clique em **Fazer novo build**, informe um nome único, descreva as alterações no comentário obrigatório e selecione o pacote compactado.
+4. **Enviar e publicar** guarda o original, extrai uma cópia para o histórico, aplica os arquivos na pasta principal e executa o ecosystem configurado no PM2. O autor é obtido da sessão autenticada.
+5. Para voltar a uma versão anterior, use **Publicar** no histórico. A tela **Builds** reúne os builds de todos os projetos e permite filtrar por projeto.
+
+O MongoDB mantém `projects` e `project_builds` separados, relacionados por `projectId` (um projeto possui muitos builds). O projeto guarda `activeBuildId`, sem incorporar uma lista crescente de builds. Consulte [Projetos: dados, publicação e API](docs/projects.md) para contratos, limites e recuperação de falhas.
+
+Arquivos gerenciados pelo build anterior e ausentes no novo pacote são removidos; arquivos locais que nunca fizeram parte desses builds são preservados. Antes da publicação, o monitor salva uma cópia dos arquivos afetados. Em caso de falha, tenta restaurá-los; uma operação interrompida é recuperada na inicialização seguinte. Isso não desfaz operações já executadas pelo PM2 nem substitui uma verificação de saúde: confira os processos após uma falha.
+
+## Uploads avulsos e versões existentes
+
+1. Gere o build do projeto e empacote os arquivos prontos para execução em um único `.zip`, `.rar`, `.7z`, `.tar`, `.tar.gz`, `.tar.bz2` ou `.tar.xz`, sem senha e sem divisão em volumes. Os aliases `.tgz`, `.tbz`, `.tbz2` e `.txz` também são aceitos.
+2. Abra **Builds → Uploads avulsos**, informe o projeto e a versão (por exemplo, `minha-app` e `1.2.0`) e selecione o arquivo.
 3. Clique em **Salvar versão**. O upload apenas salva e extrai o build.
-4. Para executar no PM2, clique em **Iniciar** na versão desejada. Ela deve conter exatamente um `ecosystem.config.js`, na raiz ou dentro de uma pasta do RAR.
+4. Para executar no PM2, clique em **Iniciar** na versão desejada. Ela deve conter exatamente um `ecosystem.config.js`, na raiz ou dentro de uma pasta do arquivo compactado.
 
 O build precisa incluir as dependências necessárias para sua execução. O monitor não executa instalação de dependências nem compila o projeto enviado.
 
-Exemplo de conteúdo do RAR:
+Exemplo de conteúdo do arquivo compactado:
 
 ```text
 ecosystem.config.js
@@ -139,12 +169,14 @@ Exemplo do ecosystem:
 
 ```javascript
 module.exports = {
-  apps: [{
-    name: 'minha-app',
-    script: './dist/main.js',
-    exec_mode: 'fork',
-    env: { NODE_ENV: 'production' },
-  }],
+  apps: [
+    {
+      name: "minha-app",
+      script: "./dist/main.js",
+      exec_mode: "fork",
+      env: { NODE_ENV: "production" },
+    },
+  ],
 };
 ```
 
@@ -155,12 +187,12 @@ Os arquivos ficam em:
 ```text
 versions/
   <id-da-versao>/
-    build.rar
+    build.zip  # Mantém o formato enviado: build.rar, build.7z, build.tar.gz etc.
     build/
       ...arquivos extraídos
 ```
 
-O MongoDB guarda projeto, versão, nome original, tamanho, hash SHA-256, usuário responsável, datas e estado. Projeto e versão não diferenciam maiúsculas de minúsculas; a mesma combinação não pode ser sobrescrita. A listagem mostra as 200 versões mais recentes. Builds sem ecosystem também podem ser armazenados e baixados, mas não iniciados pelo painel. Arquivos inválidos, caminhos fora da pasta do build e uploads acima dos limites são recusados. A extração tem limite de 2 minutos e 50 mil entradas.
+O MongoDB guarda projeto, versão, nome original, tamanho, hash SHA-256, usuário responsável, datas e estado. Projeto e versão não diferenciam maiúsculas de minúsculas; a mesma combinação não pode ser sobrescrita. A listagem mostra as 200 versões mais recentes. Builds sem ecosystem também podem ser armazenados e baixados, mas não iniciados pelo painel. Arquivos inválidos, criptografados, links simbólicos, hard links, caminhos fora da pasta do build e uploads acima dos limites são recusados. A extração tem limite de 2 minutos e 50 mil entradas e usa WebAssembly, sem exigir WinRAR ou 7-Zip instalados na VM. TARs com prefixos `./` são aceitos. Os arquivos RAR enviados anteriormente continuam disponíveis para download e execução. Métodos de compressão não suportados pelo extrator são recusados.
 
 ## Logs
 
@@ -173,7 +205,7 @@ A coleta lê os arquivos de log informados pelo PM2. Na primeira leitura de cada
 
 A área **Histórico de logs** mostra os últimos 100 registros do tipo escolhido e permite filtrar a saída pelo ID do processo. Os logs já salvos permanecem disponíveis mesmo após remover o processo do PM2. O botão de logs na tabela de processos continua consultando a saída recente diretamente no PM2.
 
-As coleções não têm expiração automática. Faça backup do banco e de `versions/` para preservar o histórico e os builds.
+Logs e usuários não têm expiração automática. Versões e builds podem ser removidos pela política opcional de limpeza configurada no painel. Faça backup do banco e de `versions/` para preservar o histórico e os builds antes do prazo de retenção.
 
 ## Atualização de uma instalação existente
 
@@ -200,14 +232,20 @@ As rotas abaixo exigem sessão, exceto login e health:
 
 - `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`
 - `GET /api/users`, `POST /api/users` com JSON `{ "username": "operador", "password": "senha-com-12-ou-mais" }`
+- `GET /api/settings/retention`, `PUT /api/settings/retention` com JSON `{ "enabled": true, "retentionDays": 30, "intervalHours": 24 }`; limites: 1–3650 dias e 1–8760 horas
 - `GET /api/processes`
 - `GET /api/processes/stream` (SSE: eventos `processes`, `metrics-error` e `session-expired`)
 - `POST /api/processes/:id/start|stop|restart|delete`
 - `GET /api/processes/:id/logs?lines=150`
 - `POST /api/ecosystems` com JSON `{ "path": "C:\\servicos\\minha-app\\ecosystem.config.js" }`
 - `POST /api/ecosystems/pick` para abrir o seletor na sessão Windows da VM
+- `GET /api/projects`, `POST /api/projects`, `GET /api/projects/:id`
+- `GET /api/projects/:id/files?path=...`, `GET /api/projects/:id/files/download?path=...`
+- `GET /api/projects/:id/builds?page=1`, `GET /api/builds?projectId=...&page=1`
+- `POST /api/projects/:id/builds` com multipart: `name`, `comments` e arquivo `build`; publica automaticamente
+- `POST /api/projects/:id/builds/:buildId/deploy`, `GET /api/projects/:id/builds/:buildId/archive`
 - `GET /api/versions`
-- `POST /api/versions` com multipart: campos `project`, `version` e arquivo `build` (`.rar`)
+- `POST /api/versions` com multipart: campos `project`, `version` e arquivo `build` (`.zip`, `.rar`, `.7z`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tgz`, `.tbz`, `.tbz2` ou `.txz`)
 - `GET /api/versions/:id/archive`
 - `POST /api/versions/:id/start`
 - `GET /api/logs?kind=audit|process&processId=3&limit=100` (`processId` opcional, limite de 1 a 500)
@@ -221,6 +259,8 @@ npm.cmd test
 npm.cmd run build
 ```
 
-Os testes do backend usam um MongoDB temporário (o binário é baixado na primeira execução) e um daemon PM2 com pasta e endpoints exclusivos, incluindo pipes exclusivos no Windows. Cobrem autenticação, criação de usuários, upload e extração de RAR, validação dos arquivos, persistência dos logs, troca de builds e retorno a uma versão anterior.
+Os testes do backend usam um MongoDB temporário (o binário é baixado na primeira execução) e um daemon PM2 com pasta e endpoints exclusivos, incluindo pipes exclusivos no Windows. Cobrem autenticação, criação de usuários, upload, extração e download de ZIP, RAR, 7z e TAR com Gzip, Bzip2 e XZ, validação dos arquivos, persistência dos logs, troca de builds e retorno a uma versão anterior. Os pequenos arquivos em `apps/backend/test/fixtures/` permitem testar 7z, Bzip2 e XZ sem ferramentas externas durante os testes.
 
-Os testes do frontend usam um DOM simulado e respostas de API de teste para verificar a navegação entre as seis áreas, a atualização automática, o bloqueio durante cadastros e o comportamento quando o PM2 está indisponível. Eles não iniciam processos PM2 nem alteram o banco real.
+Os testes de projetos também cobrem isolamento de pastas, navegação, publicação, comentário obrigatório, autoria, concorrência, retorno a builds anteriores e recuperação de arquivos após falhas ou reinício.
+
+Os testes do frontend usam um DOM simulado e respostas de API de teste para verificar a navegação entre as sete áreas, a atualização automática, o bloqueio durante cadastros e uploads, o fluxo de projetos e o comportamento quando o PM2 está indisponível. Eles não iniciam processos PM2 nem alteram o banco real.

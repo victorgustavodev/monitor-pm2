@@ -1,3 +1,5 @@
+import { dateLocale } from '../i18n';
+import { t } from "../i18n";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, X, Terminal, Plus, FolderOpen } from "lucide-react";
 import { Login } from "../features/auth/Login";
@@ -11,9 +13,16 @@ import {
 import { Overview } from "../features/overview/Overview";
 import { Applications } from "../features/processes/Applications";
 import { Settings } from "../features/settings/Settings";
+import { Projects } from "../features/projects/Projects";
+import { Builds } from "../features/projects/Builds";
+import { useLocale } from '../i18n';
 import type { Process, ProcessAction } from "../features/processes/processes";
 
 export function App() {
+  useLocale();
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null,
+  );
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [view, setView] = useState<DashboardView>("overview");
   const [username, setUsername] = useState("");
@@ -67,7 +76,7 @@ export function App() {
           setError(
             reason instanceof Error
               ? reason.message
-              : "Falha ao verificar sua sessão.",
+              : t("Falha ao verificar sua sessão."),
           );
         }
         setAuthenticated(false);
@@ -104,13 +113,13 @@ export function App() {
         if (!active) return;
         stream.close();
         setAuthenticated(false);
-        setError("Sua sessão expirou. Entre novamente.");
+        setError(t("Sua sessão expirou. Entre novamente."));
       });
       stream.onerror = () => {
         if (!active) return;
         setConnected(false);
         setLoading(false);
-        setError("Conexão de atualizações interrompida. Tentando reconectar…");
+        setError(t("Conexão de atualizações interrompida. Tentando reconectar…"));
         // EventSource does not expose the HTTP status of a failed handshake.
         void api("/api/auth/me")
           .then(() => {
@@ -123,7 +132,7 @@ export function App() {
             if (reason instanceof ApiError && reason.status === 401) {
               stream.close();
               setAuthenticated(false);
-              setError("Sua sessão expirou. Entre novamente.");
+              setError(t("Sua sessão expirou. Entre novamente."));
             } else if (stream.readyState === EventSource.CLOSED) {
               retry = window.setTimeout(connect, 3000);
             }
@@ -149,7 +158,7 @@ export function App() {
   async function act(process: Process, action: ProcessAction) {
     if (
       action === "delete" &&
-      !window.confirm(`Remover ${process.name} da lista do PM2?`)
+      !window.confirm(t("Remover {0} da lista do PM2?", { 0: process.name }))
     )
       return;
     setBusy(process.id);
@@ -171,7 +180,7 @@ export function App() {
       );
       setLogs({
         name: process.name,
-        content: data.logs || "Nenhum log disponível.",
+        content: data.logs || t("Nenhum log disponível."),
       });
     } catch (reason) {
       setError((reason as Error).message);
@@ -205,7 +214,7 @@ export function App() {
         method: "POST",
         body: JSON.stringify({ path: ecosystemPath.trim() }),
       });
-      setNotice("Ecosystem iniciado e lista salva no PM2.");
+      setNotice(t("Ecosystem iniciado e lista salva no PM2."));
       setEcosystemPath("");
       processDialog.current?.close();
       await load();
@@ -238,12 +247,7 @@ export function App() {
   }
 
   const currentView = dashboardViews.find((item) => item.id === view)!;
-  const managementPanel =
-    view === "builds"
-      ? "versions"
-      : view === "users" || view === "logs"
-        ? view
-        : null;
+  const managementPanel = view === "users" || view === "logs" ? view : null;
 
   if (authenticated === null)
     return (
@@ -255,8 +259,7 @@ export function App() {
   return (
     <div className="dashboard-shell">
       <a className="skip-link" href="#dashboard-main">
-        Ir para o conteúdo
-      </a>
+        {t("Ir para o conteúdo")}</a>
       <Sidebar
         view={view}
         onNavigate={setView}
@@ -269,11 +272,11 @@ export function App() {
         <header className="dashboard-page-header">
           <div>
             <p className="page-eyebrow">MONITOR PM2</p>
-            <h1>{currentView.label}</h1>
-            <p className="page-description">{currentView.description}</p>
+            <h1>{t(currentView.label)}</h1>
+            <p className="page-description">{t(currentView.description)}</p>
           </div>
           <div className="page-actions">
-            {!managementPanel && (
+            {["overview", "processes", "settings"].includes(view) && (
               <button
                 type="button"
                 onClick={load}
@@ -285,8 +288,7 @@ export function App() {
                   className={loading ? "animate-spin" : ""}
                   aria-hidden="true"
                 />
-                Atualizar
-              </button>
+                {t("Atualizar")}</button>
             )}
             {view === "processes" && (
               <button
@@ -295,8 +297,7 @@ export function App() {
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-action px-4 py-2.5 text-sm font-semibold text-on-action hover:bg-action-hover"
               >
                 <Plus size={16} aria-hidden="true" />
-                Adicionar processo
-              </button>
+                {t("Adicionar processo")}</button>
             )}
           </div>
         </header>
@@ -306,16 +307,16 @@ export function App() {
           />
           <span>
             {loading
-              ? "Atualizando dados…"
+              ? t("Atualizando dados…")
               : updatedAt
-                ? `Atualizado às ${updatedAt.toLocaleTimeString("pt-BR")}`
-                : "Aguardando dados do PM2"}
+                ? t("Atualizado às {0}", { 0: updatedAt.toLocaleTimeString(dateLocale()) })
+                : t("Aguardando dados do PM2")}
           </span>
           <span className="sync-divider" />
           <span>
             {autoRefresh
-              ? "Atualização ao vivo"
-              : "Atualização ao vivo pausada"}
+              ? t("Atualização ao vivo")
+              : t("Atualização ao vivo pausada")}
           </span>
         </div>
         {error && (
@@ -326,7 +327,7 @@ export function App() {
             <span>{error}</span>
             <button
               type="button"
-              aria-label="Fechar mensagem de erro"
+              aria-label={t("Fechar mensagem de erro")}
               onClick={() => setError("")}
             >
               <X size={16} />
@@ -370,8 +371,30 @@ export function App() {
             onBusyChange={setManagementBusy}
           />
         )}
+        {view === "projects" && (
+          <Projects
+            projectId={selectedProjectId}
+            onSelectProject={setSelectedProjectId}
+            onStarted={load}
+            onSessionExpired={sessionExpired}
+            onBusyChange={setManagementBusy}
+          />
+        )}
+        {view === "builds" && (
+          <Builds
+            onStarted={load}
+            onSessionExpired={sessionExpired}
+            onBusyChange={setManagementBusy}
+            onOpenProject={(id) => {
+              setSelectedProjectId(id);
+              setView("projects");
+            }}
+          />
+        )}
         {view === "settings" && (
           <Settings
+            onBusyChange={setManagementBusy}
+            onSessionExpired={sessionExpired}
             autoRefresh={autoRefresh}
             onAutoRefreshChange={setAutoRefresh}
             username={username}
@@ -405,11 +428,10 @@ export function App() {
       >
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <h2 id="add-process-title" className="text-lg font-semibold">
-            Adicionar novo processo
-          </h2>
+            {t("Adicionar novo processo")}</h2>
           <button
             type="button"
-            aria-label="Fechar"
+            aria-label={t("Fechar")}
             disabled={addingProcess || pickingFile}
             onClick={() => processDialog.current?.close()}
             className="rounded-lg p-1 text-muted hover:bg-hover"
@@ -419,12 +441,9 @@ export function App() {
         </div>
         <form onSubmit={addProcess} className="space-y-4 p-6">
           <p id="ecosystem-help" className="text-sm text-muted">
-            Informe o caminho do ecosystem.config.js na VM. Todos os processos
-            definidos nele serão iniciados.
-          </p>
+            {t("Informe o caminho do ecosystem.config.js na VM. Todos os processos definidos nele serão iniciados.")}</p>
           <label className="block text-sm font-medium">
-            Caminho do ecosystem.config.js
-            <input
+            {t("Caminho do ecosystem.config.js")}<input
               autoFocus
               value={ecosystemPath}
               onChange={(event) => setEcosystemPath(event.target.value)}
@@ -442,7 +461,7 @@ export function App() {
             className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm text-action-secondary hover:bg-hover"
           >
             <FolderOpen size={16} aria-hidden="true" />
-            {pickingFile ? "Selecionando…" : "Selecionar na VM"}
+            {pickingFile ? t("Selecionando…") : t("Selecionar na VM")}
           </button>
           {processError && (
             <p
@@ -459,14 +478,13 @@ export function App() {
               onClick={() => processDialog.current?.close()}
               className="rounded-lg border border-line px-4 py-2.5 text-sm hover:bg-canvas"
             >
-              Cancelar
-            </button>
+              {t("Cancelar")}</button>
             <button
               type="submit"
               disabled={addingProcess || pickingFile || !ecosystemPath.trim()}
               className="rounded-lg bg-action px-4 py-2.5 text-sm font-semibold text-on-action hover:bg-action-hover"
             >
-              {addingProcess ? "Iniciando…" : "Adicionar processo"}
+              {addingProcess ? t("Iniciando…") : t("Adicionar processo")}
             </button>
           </div>
         </form>
@@ -479,18 +497,18 @@ export function App() {
           <section
             role="dialog"
             aria-modal="true"
-            aria-label={`Logs de ${logs.name}`}
+            aria-label={t("Logs de {0}", { 0: logs.name })}
             onClick={(event) => event.stopPropagation()}
             className="flex max-h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-dialog"
           >
             <header className="flex items-center justify-between border-b border-line px-5 py-4">
               <div className="flex items-center gap-2">
                 <Terminal size={18} className="text-accent" />
-                <strong>Logs · {logs.name}</strong>
+                <strong>{t("Logs ·")}{" "}{logs.name}</strong>
               </div>
               <button
                 onClick={() => setLogs(null)}
-                aria-label="Fechar logs"
+                aria-label={t("Fechar logs")}
                 className="rounded-lg p-1 text-muted hover:bg-hover"
               >
                 <X size={18} />
