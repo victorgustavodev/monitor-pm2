@@ -1,4 +1,4 @@
-import { HttpError } from './http-error';
+import { HttpError } from '../common/http-error';
 
 // Validação independente do SO: os builds também serão extraídos no Windows.
 export function archivePath(name: string): string {

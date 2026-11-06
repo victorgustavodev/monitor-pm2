@@ -44,10 +44,10 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(socket('rpc'))}; conf.DAEMON_PUB_PORT=${JS
     VPN_ALLOWED_CIDRS: 'invalid-legacy-value',
   });
   appModule = backend('main');
-  db = backend('database');
+  db = backend('common/database');
   // O deploy real é coberto em deployment.test.cjs com pipes isolados.
   if (process.env.TEST_BACKEND_SOURCE !== 'true') {
-    backend('pm2').deployEcosystem = async (path) => {
+    backend('pm2/pm2.service').deployEcosystem = async (path) => {
       await appendFile(pm2Calls, JSON.stringify({ path }) + '\n');
     };
   }
@@ -94,6 +94,7 @@ test('network access, MongoDB authentication, builds, deployment and persisted l
   await t.test('accepts requests with legacy VPN config while retaining authentication', async () => {
     assert.equal((await request('/api/health')).status, 200);
     assert.equal((await request('/api/users')).status, 401);
+    assert.equal((await request('/api/processes/stream')).status, 401);
     const noAuth = await upload('1.0.0', archive);
     assert.equal(noAuth.status, 401);
     assert.deepEqual(await readdir(resolve(directory, 'versions', '.uploads')), []);
@@ -122,6 +123,31 @@ test('network access, MongoDB authentication, builds, deployment and persisted l
     assert.deepEqual(rows[0].ports, [3100]);
     assert.equal(rows[0].portSource, 'configured');
     assert.ok(!JSON.stringify(rows).includes('not-for-api'));
+  });
+
+  await t.test('streams authenticated metrics immediately without compression', { timeout: 15000 }, async () => {
+    const controller = new AbortController();
+    const response = await request('/api/processes/stream', {
+      signal: controller.signal, headers: { 'accept-encoding': 'gzip' },
+    });
+    try {
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get('content-type'), /text\/event-stream/);
+      assert.equal(response.headers.get('content-encoding'), null);
+      assert.equal(response.headers.get('x-accel-buffering'), 'no');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let received = '';
+      while (!received.includes('event: processes\n')) {
+        const { value, done } = await reader.read();
+        assert.equal(done, false);
+        received += decoder.decode(value, { stream: true });
+      }
+      assert.match(received, /"name":"app"/);
+      assert.ok(!received.includes('not-for-api'));
+    } finally {
+      controller.abort();
+    }
   });
 
   await t.test('creates users, rejects duplicates and weak passwords, never exposes hashes', async () => {
@@ -166,7 +192,7 @@ test('network access, MongoDB authentication, builds, deployment and persisted l
     // O limite de extração é testado sem passar pelo limite menor de upload.
     const tmp = resolve(directory, 'large.rar');
     await writeFile(tmp, large);
-    const { saveBuild } = backend('versions');
+    const { saveBuild } = backend('versions/versions.service');
     await assert.rejects(saveBuild({ path: tmp, originalname: 'large.rar', size: large.length }, { project: 'app', version: 'expanded-large' }, 'admin'), /descompactado/);
     for (const name of ['../outside.txt', '/absolute.txt', 'C:/absolute.txt', 'dir/file:stream', 'NUL.txt', 'dir/../outside.txt']) {
       const response = await upload('unsafe', rar([[name, 'invalid']]));
@@ -198,7 +224,7 @@ test('network access, MongoDB authentication, builds, deployment and persisted l
   });
 
   await t.test('persists audit and incremental process logs across collector restarts and file truncation', async () => {
-    const { collectProcessLogs } = backend('logs');
+    const { collectProcessLogs } = backend('logs/logs.service');
     await collectProcessLogs();
     assert.equal(await db.logs.countDocuments({ kind: 'process' }), 1);
     await collectProcessLogs();

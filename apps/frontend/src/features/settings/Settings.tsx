@@ -10,7 +10,7 @@ export function Settings({ autoRefresh, onAutoRefreshChange, username }: {
       <div className="settings-icon"><RefreshCw size={21} strokeWidth={1.6} aria-hidden="true" /></div>
       <div><h2 id="refresh-settings-title">Atualização do painel</h2><p>Escolha como acompanhar os indicadores e a lista de processos nesta sessão.</p></div>
       <label className="refresh-preference">
-        <div><strong>Atualização automática</strong><span>Buscar o estado dos processos a cada 10 segundos.</span></div>
+        <div><strong>Atualização ao vivo</strong><span>Receber mudanças nas métricas e nos processos pela conexão contínua com o servidor.</span></div>
         <input type="checkbox" checked={autoRefresh} onChange={(event) => onAutoRefreshChange(event.target.checked)} />
       </label>
       <p className="settings-note">Você também pode atualizar os dados a qualquer momento pelo botão Atualizar.</p>

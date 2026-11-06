@@ -8,21 +8,21 @@ As cores da interface ficam em [`tokens.css`](../apps/frontend/src/styles/tokens
 2. **Semânticos** (`--ds-color-*`): referências aos primitivos conforme a finalidade da cor. Por exemplo, `--ds-color-action` define ações primárias; `--ds-color-focus` define foco de teclado. As duas funções podem usar o mesmo cobalto e ainda ser alteradas separadamente.
 3. **Integração com componentes**: CSS consome os semânticos com `var(...)`; o adaptador `@theme inline` disponibiliza os mesmos tokens como utilitários do Tailwind v4. Componentes não devem acessar os primitivos nem declarar novas cores literais.
 
-| Uso | Token CSS | Exemplos no Tailwind |
-| --- | --- | --- |
-| Fundo da página | `--ds-color-canvas` | `bg-canvas` |
-| Cards e diálogos | `--ds-color-surface` | `bg-surface` |
-| Conteúdo e apoio | `--ds-color-content`, `--ds-color-muted` | `text-content`, `text-muted` |
-| Títulos e links | `--ds-color-heading`, `--ds-color-link` | `text-heading`, `text-link` |
-| Ação primária | `--ds-color-action`, `--ds-color-on-action` | `bg-action text-on-action` |
-| Hover de ação | `--ds-color-action-hover` | `hover:bg-action-hover` |
-| Borda e foco | `--ds-color-line`, `--ds-color-focus` | `border-line focus:border-focus` |
-| Identidade e contraste da logo | `--ds-color-shell`, `--ds-color-on-brand` | `bg-shell text-on-brand` |
-| Sucesso | `--ds-color-success`, `--ds-color-success-surface` | `text-success bg-success-surface` |
-| Atenção | `--ds-color-warning`, `--ds-color-warning-surface` | `text-warning bg-warning-surface` |
-| Erro ou ação destrutiva | `--ds-color-danger`, `--ds-color-danger-surface` | `text-danger bg-danger-surface` |
+| Uso                            | Token CSS                                          | Exemplos no Tailwind              |
+| ------------------------------ | -------------------------------------------------- | --------------------------------- |
+| Fundo da página                | `--ds-color-canvas`                                | `bg-canvas`                       |
+| Cards e diálogos               | `--ds-color-surface`                               | `bg-surface`                      |
+| Conteúdo e apoio               | `--ds-color-content`, `--ds-color-muted`           | `text-content`, `text-muted`      |
+| Títulos e links                | `--ds-color-heading`, `--ds-color-link`            | `text-heading`, `text-link`       |
+| Ação primária                  | `--ds-color-action`, `--ds-color-on-action`        | `bg-action text-on-action`        |
+| Hover de ação                  | `--ds-color-action-hover`                          | `hover:bg-action-hover`           |
+| Borda e foco                   | `--ds-color-line`, `--ds-color-focus`              | `border-line focus:border-focus`  |
+| Identidade e contraste da logo | `--ds-color-shell`, `--ds-color-on-brand`          | `bg-shell text-on-brand`          |
+| Sucesso                        | `--ds-color-success`, `--ds-color-success-surface` | `text-success bg-success-surface` |
+| Atenção                        | `--ds-color-warning`, `--ds-color-warning-surface` | `text-warning bg-warning-surface` |
+| Erro ou ação destrutiva        | `--ds-color-danger`, `--ds-color-danger-surface`   | `text-danger bg-danger-surface`   |
 
-Sombras, seleção de texto, sobreposições e efeitos decorativos também ficam nesse arquivo e referenciam a paleta. Nenhuma cor de interface precisa ser repetida em `App.tsx`, `Management.tsx` ou `styles.css`.
+Sombras, seleção de texto, sobreposições e efeitos decorativos também ficam nesse arquivo e referenciam a paleta. Nenhuma cor de interface precisa ser repetida em `app/App.tsx`, `features/management/Management.tsx` ou `styles/global.css`.
 
 ## Como usar
 
@@ -47,7 +47,7 @@ Estados devem continuar identificáveis por texto ou ícone, além da cor. Mante
 
 ## Navegação e layout
 
-O painel autenticado usa uma sidebar azul com a logo branca, o usuário conectado e seis áreas: visão geral, processos, logs, usuários, builds e configurações. `Sidebar.tsx` centraliza os destinos; `App.tsx` controla a área ativa. O estado ativo, o hover, os ícones e o foco de teclado da navegação usam os tokens `--ds-color-navigation-*` e `--ds-color-shell-*`.
+O painel autenticado usa uma sidebar azul com a logo branca, o usuário conectado e seis áreas: visão geral, processos, logs, usuários, builds e configurações. `components/layout/Sidebar.tsx` centraliza os destinos; `app/App.tsx` controla a área ativa. As telas ficam em `features/`, os estilos globais em `styles/global.css` e a tela de login em `features/auth/Login.tsx`. O estado ativo, o hover, os ícones e o foco de teclado da navegação usam os tokens `--ds-color-navigation-*` e `--ds-color-shell-*`.
 
 Em desktop, a sidebar permanece visível enquanto o conteúdo rola. Em telas menores que 768 px, ela vira uma barra superior com navegação horizontal. O conteúdo mantém largura flexível e tabelas rolam dentro do próprio card. O atalho “Ir para o conteúdo” permite pular a navegação usando o teclado.
 

@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
-const { configuredPorts, portsForProcess, inspectProcessPorts } = require('../dist/process-ports');
+const { configuredPorts, portsForProcess, inspectProcessPorts } = require('../dist/pm2/process-ports');
 
 test('reads valid configured ports and CLI flags, without treating unrelated numbers as ports', () => {
   assert.deepEqual(configuredPorts({ pm_id: 1, pm2_env: {

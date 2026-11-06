@@ -45,8 +45,8 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(rpc)}; conf.DAEMON_PUB_PORT=${JSON.stringi
       await writeFile(config, `module.exports={apps:[{name:'isolated-build',script:'./main.js',exec_mode:'fork'}]};`);
       configs.push(config);
     }
-    const { deployEcosystem } = require(process.env.TEST_BACKEND_SOURCE === 'true' ? '../src/pm2.ts' : '../dist/pm2');
-    const { parsePm2Output } = require('../dist/pm2-output');
+    const { deployEcosystem } = require(process.env.TEST_BACKEND_SOURCE === 'true' ? '../src/pm2/pm2.service.ts' : '../dist/pm2/pm2.service');
+    const { parsePm2Output } = require('../dist/pm2/pm2-output');
     let initialId;
     for (const index of [0, 1, 0]) {
       await deployEcosystem(configs[index]);
@@ -69,7 +69,7 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(rpc)}; conf.DAEMON_PUB_PORT=${JSON.stringi
     assert.equal(JSON.parse(running.stdout.slice(running.stdout.indexOf('[{')))[0].pm2_env.pm_exec_path, resolve(directory, 'v1', 'main.js'));
     assert.match(await readFile(resolve(pm2Home, 'dump.pm2'), 'utf8'), /isolated-build/);
   } finally {
-    await cli(['kill']).catch(() => {});
+    await cli(['kill']).catch(() => { });
     if (oldNodeOptions === undefined) delete process.env.NODE_OPTIONS;
     else process.env.NODE_OPTIONS = oldNodeOptions;
     if (directory.startsWith(resolve(tmpdir()) + sep) && directory.includes('monitor-deployment-')) {

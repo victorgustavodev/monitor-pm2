@@ -4,22 +4,24 @@ import { mkdir } from 'node:fs/promises';
 import { MulterError } from 'multer';
 import { MongoError, type Filter } from 'mongodb';
 import { resolve, sep } from 'node:path';
-import { authenticate, createSession, sessionCookie, validateLogin } from './auth';
-import { env } from './config';
-import { HttpError } from './http-error';
-import { connectDatabase, logs, mongo, publicUser, users, versions, type LogRecord } from './database';
-import { bootstrapUser, createUser } from './users';
-import { saveBuild, startVersion, uploadBuild, versionFolder, versionId } from './versions';
-import { startLogCollector } from './logs';
-import { listProcesses, processAction, processLogs, pickEcosystem, startEcosystem, type ProcessAction } from './pm2';
+import { authenticate, createSession, sessionCookie, validateLogin } from './auth/auth.service';
+import { env } from './common/config';
+import { HttpError } from './common/http-error';
+import { connectDatabase, logs, mongo, publicUser, users, versions, type LogRecord } from './common/database';
+import { bootstrapUser, createUser } from './auth/users.service';
+import { saveBuild, startVersion, uploadBuild, versionFolder, versionId } from './versions/versions.service';
+import { startLogCollector } from './logs/logs.service';
+import { createProcessStream } from './pm2/process-stream';
+import { listProcesses, processAction, processLogs, pickEcosystem, startEcosystem, type ProcessAction } from './pm2/pm2.service';
 
 export const app = express();
+const processStream = createProcessStream(listProcesses);
 const pendingAudit = new Set<Promise<unknown>>();
 const frontendPath = resolve(__dirname, '..', '..', 'frontend', 'dist');
 const actions = new Set<ProcessAction>(['start', 'restart', 'stop', 'delete']);
 
 app.disable('x-powered-by');
-app.use(compression());
+app.use(compression({ filter: (request, response) => request.path !== '/api/processes/stream' && compression.filter(request, response) }));
 app.use((_request, response, next) => {
   response.set({
     'X-Content-Type-Options': 'nosniff',
@@ -34,7 +36,7 @@ app.use('/api', (request, response, next) => {
   const path = request.path;
   response.set('Cache-Control', 'no-store');
   response.once('finish', () => {
-    if (['/health', '/auth/me', '/processes', '/logs', '/versions', '/users'].includes(path) && request.method === 'GET') return;
+    if (['/health', '/auth/me', '/processes', '/processes/stream', '/logs', '/versions', '/users'].includes(path) && request.method === 'GET') return;
     const entry = logs.insertOne({ kind: 'audit', createdAt: new Date(),
       username: response.locals.username, ip: request.ip || request.socket.remoteAddress,
       method: request.method, path: `/api${path}`, status: response.statusCode,
@@ -93,6 +95,11 @@ app.post('/api/versions/:id/start', authenticate, async (request, response) => {
 });
 
 app.get('/api/processes', authenticate, async (_request, response) => response.json(await listProcesses()));
+app.get('/api/processes/stream', authenticate, (_request, response) => {
+  processStream.subscribe(response, response.locals.sessionExpiresAt, async () =>
+    Boolean(await users.findOne({ username: response.locals.username }, { projection: { _id: 1 } })),
+  );
+});
 app.post('/api/ecosystems/pick', authenticate, async (_request, response) => {
   response.json({ path: await pickEcosystem() });
 });
@@ -159,6 +166,7 @@ async function start() {
   const stopCollector = startLogCollector();
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => {
+      processStream.close();
       server.close(async () => {
         await stopCollector();
         await Promise.allSettled([...pendingAudit]);

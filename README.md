@@ -6,6 +6,7 @@ Painel web para visualizar e operar processos do PM2 em uma VM Windows. O fronte
 
 - Navegação lateral com visão geral, processos, logs, usuários, builds e configurações; em celular, a navegação fica no topo.
 - Lista status, PID, portas TCP, CPU, memória, uptime e reinícios dos processos.
+- Atualiza métricas e processos por SSE, sem consultas periódicas do navegador.
 - Permite alternar as aplicações entre lista e cards, mantendo a busca e as ações nos dois formatos e salvando a preferência no navegador.
 - Inicia, para, reinicia e remove processos; também permite iniciar um ecosystem já existente na VM.
 - Aceita builds prontos em `.rar`, identifica projeto e versão, preserva o arquivo original e extrai os arquivos em `versions/`.
@@ -46,10 +47,29 @@ O código e os arquivos gerados ficam separados:
 ```text
 apps/
   frontend/
-    src/      # Código-fonte React
+    src/
+      app/         # Componente principal e integração do painel
+      assets/      # Imagens e favicon
+      components/  # Componentes compartilhados de layout
+      features/    # Telas e componentes agrupados por funcionalidade
+        auth/
+        management/
+        overview/
+        processes/
+        settings/
+      services/    # Cliente HTTP da API
+      styles/      # CSS global e tokens do design system
+      types/       # Declarações TypeScript de bibliotecas e do Vite
+      main.tsx     # Entrada do React
     dist/     # Build gerado pelo Vite
   backend/
-    src/      # Código-fonte da API
+    src/
+      auth/      # Sessões, senhas e cadastro de usuários
+      common/    # Configuração, acesso ao banco e erros HTTP
+      logs/      # Coleta e persistência de logs
+      pm2/       # Operações, métricas, SSE, portas e worker de deploy
+      versions/  # Builds RAR, versões e worker de extração
+      main.ts    # Rotas Express e inicialização da API
     dist/     # Build gerado pelo TypeScript
 ```
 
@@ -71,6 +91,14 @@ Use um `JWT_SECRET` com pelo menos 32 caracteres. Para gerar um segredo:
 ```
 
 Configure `COOKIE_SECURE=true` quando o painel for acessado por HTTPS.
+
+## Atualização ao vivo
+
+Após o login, o navegador abre uma conexão SSE autenticada em `GET /api/processes/stream`. O backend consulta o PM2 a cada 5 segundos enquanto houver clientes conectados e compartilha a coleta entre eles. Envia a lista completa apenas quando os dados mudam; cada conexão recebe também o estado inicial disponível. CPU e memória continuam dependendo da amostragem do PM2.
+
+O stream envia sinais de manutenção a cada 15 segundos, verifica se o usuário ainda existe, informa falhas de coleta e encerra quando a sessão expira ou o usuário é removido. O navegador tenta reconectar em caso de interrupção e recebe o estado atual ao reconectar. É possível pausar a atualização ao vivo em **Configurações**; o botão **Atualizar** continua disponível para uma consulta manual.
+
+Se houver IIS ou outro proxy reverso, desabilite o buffering e a compressão para essa rota e permita respostas de longa duração, para que os eventos cheguem sem atraso. O Express já desabilita a compressão nessa rota e envia `X-Accel-Buffering: no` para proxies que reconhecem esse cabeçalho.
 
 ## Portas dos processos
 
@@ -173,6 +201,7 @@ As rotas abaixo exigem sessão, exceto login e health:
 - `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`
 - `GET /api/users`, `POST /api/users` com JSON `{ "username": "operador", "password": "senha-com-12-ou-mais" }`
 - `GET /api/processes`
+- `GET /api/processes/stream` (SSE: eventos `processes`, `metrics-error` e `session-expired`)
 - `POST /api/processes/:id/start|stop|restart|delete`
 - `GET /api/processes/:id/logs?lines=150`
 - `POST /api/ecosystems` com JSON `{ "path": "C:\\servicos\\minha-app\\ecosystem.config.js" }`

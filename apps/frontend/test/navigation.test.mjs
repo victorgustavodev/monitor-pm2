@@ -9,6 +9,8 @@ let failProcesses = false;
 let pendingUser;
 let pendingAction;
 const requests = [];
+const streams = [];
+const intervals = [];
 const processes = [
   { id: 1, name: 'api-service', status: 'online', pid: 100, cpu: 1, memory: 100 * 1024 * 1024, uptime: Date.now(), restarts: 0, mode: 'fork', version: '1.0', ports: [3000], portSource: 'listening' },
   { id: 2, name: 'web-service', status: 'stopped', pid: 0, cpu: 0, memory: 0, uptime: null, restarts: 1, mode: 'fork', version: '1.0', ports: [5500], portSource: 'configured' },
@@ -23,6 +25,22 @@ before(async () => {
     FormData: dom.window.FormData, IS_REACT_ACT_ENVIRONMENT: true,
   });
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator });
+  globalThis.EventSource = class extends dom.window.EventTarget {
+    static CLOSED = 2;
+    readyState = 1;
+    constructor(url) {
+      super();
+      assert.equal(url, '/api/processes/stream');
+      streams.push(this);
+    }
+    close() { this.readyState = 2; }
+    emit(type, data) { this.dispatchEvent(new dom.window.MessageEvent(type, { data: JSON.stringify(data) })); }
+  };
+  const originalInterval = dom.window.setInterval.bind(dom.window);
+  dom.window.setInterval = (callback, delay, ...args) => {
+    intervals.push(delay);
+    return originalInterval(callback, delay, ...args);
+  };
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
   dom.window.HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
   globalThis.fetch = async (url, options = {}) => {
@@ -41,7 +59,7 @@ before(async () => {
     configLoader: 'runner', server: { middlewareMode: true, watch: null }, appType: 'custom',
     optimizeDeps: { noDiscovery: true, include: [] },
   });
-  ({ App } = await vite.ssrLoadModule('/src/App.tsx'));
+  ({ App } = await vite.ssrLoadModule('/src/app/App.tsx'));
   const { createRoot } = await import('react-dom/client');
   root = createRoot(document.getElementById('root'));
   await act(async () => { root.render(createElement(App)); });
@@ -56,6 +74,26 @@ after(async () => {
 function navigation(label) {
   return [...document.querySelectorAll('nav[aria-label="Navegação principal"] button')].find((button) => button.querySelector('span')?.textContent === label);
 }
+
+test('SSE applies metric updates and PM2 recovery without polling, and detects connection loss', async () => {
+  assert.equal(streams.length, 1);
+  assert.ok(!intervals.includes(10_000));
+  const requestCount = requests.filter((request) => request.url === '/api/processes').length;
+  const stream = streams.at(-1);
+  const updated = processes.map((process) => ({ ...process, cpu: 25 }));
+  await act(async () => stream.emit('processes', updated));
+  assert.match(document.querySelector('.overview-metrics').textContent, /50.0%/);
+  await act(async () => stream.emit('metrics-error', { message: 'PM2 indisponível.' }));
+  assert.match(document.querySelector('[role="alert"]').textContent, /PM2 indisponível/);
+  assert.match(document.querySelector('.overview-metrics').textContent, /Indisponível/);
+  await act(async () => stream.emit('processes', processes));
+  assert.equal(document.querySelector('[role="alert"]'), null);
+  await act(async () => stream.onerror());
+  assert.match(document.querySelector('[role="alert"]').textContent, /Tentando reconectar/);
+  await act(async () => stream.emit('processes', processes));
+  assert.equal(document.querySelector('[role="alert"]'), null);
+  assert.equal(requests.filter((request) => request.url === '/api/processes').length, requestCount);
+});
 async function go(label) {
   const button = navigation(label);
   assert.ok(button, label);
@@ -89,6 +127,7 @@ test('sidebar exposes six working destinations and the overview uses real proces
   const autoRefresh = document.querySelector('input[type="checkbox"]');
   assert.equal(autoRefresh.checked, true);
   await act(async () => autoRefresh.click());
+  assert.equal(streams.at(-1).readyState, EventSource.CLOSED);
   assert.match(document.querySelector('.dashboard-sync').textContent, /pausada/);
   await go('Visão geral');
 });
@@ -186,4 +225,15 @@ test('an authenticated user can still navigate when PM2 cannot be reached', asyn
   assert.equal(document.querySelector('h1').textContent, 'Visão geral');
   assert.match(document.querySelector('[role="alert"]').textContent, /PM2 indisponível/);
   await go('Usuários');
+});
+
+test('SSE closes on remount and session expiry returns to login', async () => {
+  const previous = streams.at(-1);
+  await act(async () => root.render(createElement(App, { key: 'stream-session' })));
+  assert.equal(previous.readyState, EventSource.CLOSED);
+  const current = streams.at(-1);
+  await act(async () => current.emit('session-expired', {}));
+  assert.equal(current.readyState, EventSource.CLOSED);
+  assert.ok(document.querySelector('#login-title'));
+  assert.match(document.querySelector('[role="alert"]').textContent, /sessão expirou/);
 });

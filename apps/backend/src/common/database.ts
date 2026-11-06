@@ -1,5 +1,5 @@
-import { MongoClient, type Collection, type ObjectId } from 'mongodb';
-import { env } from './config';
+import { MongoClient, type Collection, type ObjectId } from "mongodb";
+import { env } from "./config";
 
 export interface UserRecord {
   username: string;
@@ -8,7 +8,7 @@ export interface UserRecord {
 }
 
 export interface LogRecord {
-  kind: 'audit' | 'process';
+  kind: "audit" | "process";
   createdAt: Date;
   username?: string;
   ip?: string;
@@ -29,7 +29,7 @@ export interface VersionRecord {
   sha256: string;
   createdAt: Date;
   createdBy: string;
-  status: 'processing' | 'ready' | 'starting' | 'started' | 'failed';
+  status: "processing" | "ready" | "starting" | "started" | "failed";
   ecosystem?: string;
   startedAt?: Date;
   error?: string;
@@ -41,12 +41,15 @@ export interface LogCursor {
   identity: string;
 }
 
-export const mongo = new MongoClient(env.mongoUri, { serverSelectionTimeoutMS: 5000 });
+export const mongo = new MongoClient(env.mongoUri, {
+  serverSelectionTimeoutMS: 5000,
+});
 const db = mongo.db(env.mongoDatabase);
-export const users = db.collection<UserRecord>('users');
-export const logs = db.collection<LogRecord>('logs');
-export const versions = db.collection<VersionRecord>('versions');
-export const logCursors: Collection<LogCursor> = db.collection<LogCursor>('log_cursors');
+export const users = db.collection<UserRecord>("users");
+export const logs = db.collection<LogRecord>("logs");
+export const versions = db.collection<VersionRecord>("versions");
+export const logCursors: Collection<LogCursor> =
+  db.collection<LogCursor>("log_cursors");
 
 export async function connectDatabase() {
   await mongo.connect();
@@ -59,11 +62,22 @@ export async function connectDatabase() {
     versions.createIndex({ createdAt: -1 }),
   ]);
   // Um reinício pode interromper uma extração ou uma chamada ao PM2.
-  await versions.updateMany({ status: { $in: ['processing', 'starting'] } }, {
-    $set: { status: 'failed', error: 'Operação interrompida pelo reinício do monitor. Confira o PM2 antes de iniciar novamente.' },
-  });
+  await versions.updateMany(
+    { status: { $in: ["processing", "starting"] } },
+    {
+      $set: {
+        status: "failed",
+        error:
+          "Operação interrompida pelo reinício do monitor. Confira o PM2 antes de iniciar novamente.",
+      },
+    },
+  );
 }
 
 export function publicUser(user: UserRecord & { _id: ObjectId }) {
-  return { id: user._id.toHexString(), username: user.username, createdAt: user.createdAt };
+  return {
+    id: user._id.toHexString(),
+    username: user.username,
+    createdAt: user.createdAt,
+  };
 }

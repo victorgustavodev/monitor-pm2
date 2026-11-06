@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parsePm2Output } = require('../dist/pm2-output');
+const { parsePm2Output } = require('../dist/pm2/pm2-output');
 
 const rows = [{ pm_id: 0, name: 'Python [worker]', pm2_env: { status: 'online' }, monit: { cpu: 0, memory: 1 } }];
 const json = JSON.stringify(rows);

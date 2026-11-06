@@ -5,11 +5,11 @@ import { mkdir, rename, rm } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { MongoServerError, ObjectId } from 'mongodb';
-import { env } from './config';
-import { versions, type VersionRecord } from './database';
+import { env } from '../common/config';
+import { versions, type VersionRecord } from '../common/database';
 import { archivePath } from './archive-path';
-import { HttpError } from './http-error';
-import { deployEcosystem } from './pm2';
+import { HttpError } from '../common/http-error';
+import { deployEcosystem } from '../pm2/pm2.service';
 
 export const uploadBuild = multer({
   dest: resolve(env.versionsPath, '.uploads'),
