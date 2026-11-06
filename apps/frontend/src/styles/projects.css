@@ -635,3 +635,44 @@
     flex-wrap: wrap;
   }
 }
+.project-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.project-button.danger {
+  background: var(--ds-color-danger);
+  border-color: var(--ds-color-danger);
+  color: var(--ds-color-on-action);
+}
+.project-button.danger:hover {
+  opacity: 0.9;
+}
+.project-delete-section {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--ds-color-danger-line);
+}
+.project-delete-section > button {
+  justify-self: start;
+}
+.project-delete-section .project-form {
+  margin-top: 0;
+}
+@media (max-width: 640px) {
+  .project-header-actions {
+    width: 100%;
+  }
+  .project-header-actions > button {
+    flex: 1;
+  }
+}
+.project-form .project-pm2-code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  tab-size: 2;
+  min-height: 200px;
+}

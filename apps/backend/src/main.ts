@@ -6,6 +6,7 @@ import { MongoError, type Filter } from "mongodb";
 import { resolve, sep } from "node:path";
 import {
   authenticate,
+  requireAdmin,
   createSession,
   sessionCookie,
   validateLogin,
@@ -112,7 +113,7 @@ app.use("/api", (request, response, next) => {
   });
   next();
 });
-app.use("/api", express.json({ limit: "16kb" }));
+app.use("/api", express.json({ limit: "64kb" }));
 
 app.get("/api/health", (_request, response) =>
   response.json({ status: "ok", timestamp: new Date().toISOString() }),
@@ -140,7 +141,11 @@ app.post("/api/auth/logout", authenticate, (_request, response) => {
   response.clearCookie("pm2_session", { path: "/" }).status(204).end();
 });
 app.get("/api/auth/me", authenticate, (_request, response) =>
-  response.json({ authenticated: true, username: response.locals.username }),
+  response.json({
+    authenticated: true,
+    username: response.locals.username,
+    role: response.locals.role,
+  }),
 );
 
 app.use("/api/projects", authenticate, projectRoutes);
@@ -150,21 +155,37 @@ app.get("/api/builds", authenticate, async (request, response) =>
   ),
 );
 
-app.get("/api/users", authenticate, async (_request, response) => {
-  response.json(
-    (
-      await users
-        .find({}, { projection: { passwordHash: 0 } })
-        .sort({ username: 1 })
-        .toArray()
-    ).map(publicUser),
-  );
-});
-app.post("/api/users", authenticate, async (request, response) => {
-  response
-    .status(201)
-    .json(await createUser(request.body?.username, request.body?.password));
-});
+app.get(
+  "/api/users",
+  authenticate,
+  requireAdmin,
+  async (_request, response) => {
+    response.json(
+      (
+        await users
+          .find({}, { projection: { passwordHash: 0 } })
+          .sort({ username: 1 })
+          .toArray()
+      ).map(publicUser),
+    );
+  },
+);
+app.post(
+  "/api/users",
+  authenticate,
+  requireAdmin,
+  async (request, response) => {
+    response
+      .status(201)
+      .json(
+        await createUser(
+          request.body?.username,
+          request.body?.password,
+          request.body?.role,
+        ),
+      );
+  },
+);
 app.get("/api/logs", authenticate, async (request, response) => {
   const filter: Filter<LogRecord> = {};
   if (request.query.kind !== undefined) {

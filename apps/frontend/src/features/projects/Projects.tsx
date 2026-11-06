@@ -16,7 +16,13 @@ import { api, ApiError } from "../../services/api";
 import { BuildForm } from "./components/BuildForm";
 import { BuildHistory } from "./components/BuildHistory";
 import { ProjectFiles } from "./components/ProjectFiles";
-import { dateTime, type Project } from "./types";
+import type {
+  Project,
+  ProjectDeletionPreview,
+  ProjectDeletionOptions,
+} from "./types";
+import { ProjectSettings } from "./components/ProjectSettings";
+import { Pm2ConfigurationField } from "./components/Pm2ConfigurationField";
 
 export function Projects({
   projectId,
@@ -133,6 +139,63 @@ export function Projects({
       setLoading(false);
     }
   }
+  async function update(data: FormData) {
+    if (!selected || busy) return;
+    setFormBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const project = await api<Project>(`/api/projects/${selected._id}`, {
+        method: "PUT",
+        body: JSON.stringify(Object.fromEntries(data.entries())),
+      });
+      setProjects((rows) =>
+        rows.map((row) => (row._id === project._id ? project : row)),
+      );
+      setRevision((value) => value + 1);
+      setNotice(t("Projeto atualizado."));
+    } catch (reason) {
+      fail(reason);
+    } finally {
+      setFormBusy(false);
+    }
+  }
+  async function prepareDelete() {
+    if (!selected) throw new Error(t("Projeto não encontrado."));
+    setFormBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      return await api<ProjectDeletionPreview>(
+        `/api/projects/${selected._id}/deletion-preview`,
+      );
+    } catch (reason) {
+      fail(reason);
+      throw reason;
+    } finally {
+      setFormBusy(false);
+    }
+  }
+  async function remove(options: ProjectDeletionOptions) {
+    if (!selected || busy) return;
+    setFormBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await api(`/api/projects/${selected._id}`, {
+        method: "DELETE",
+        body: JSON.stringify(options),
+      });
+      setProjects((rows) => rows.filter((row) => row._id !== selected._id));
+      onSelectProject(null);
+      await onStarted();
+    } catch (reason) {
+      await load().catch(() => undefined);
+      fail(reason);
+    } finally {
+      setFormBusy(false);
+    }
+  }
   const filtered = projects.filter((project) =>
     `${project.name} ${project.description}`
       .toLowerCase()
@@ -169,7 +232,8 @@ export function Projects({
               disabled={busy || loading}
             >
               <RefreshCw size={16} />
-              {t("Atualizar")}</button>
+              {t("Atualizar")}
+            </button>
             <button
               className="project-button"
               onClick={() => {
@@ -179,7 +243,8 @@ export function Projects({
               disabled={busy || creating}
             >
               <Plus size={17} />
-              {t("Novo projeto")}</button>
+              {t("Novo projeto")}
+            </button>
           </div>
           {creating && (
             <section
@@ -190,15 +255,19 @@ export function Projects({
                 <div>
                   <h2 id="new-project-title">{t("Criar projeto")}</h2>
                   <p>
-                    {t("Cadastre a pasta da aplicação nesta VM e o arquivo usado pelo PM2.")}</p>
+                    {t(
+                      "Cadastre a pasta da aplicação nesta VM e o arquivo usado pelo PM2.",
+                    )}
+                  </p>
                 </div>
               </div>
               <form className="project-form" onSubmit={create}>
                 <div className="project-form-columns">
                   <label>
-                    {t("Nome do projeto")}<input
+                    {t("Nome do projeto")}
+                    <input
                       name="name"
-                      placeholder="ProjetoX"
+                      placeholder="project-name"
                       required
                       maxLength={80}
                       disabled={busy}
@@ -206,7 +275,8 @@ export function Projects({
                     />
                   </label>
                   <label>
-                    {t("Descrição")}<input
+                    {t("Descrição")}
+                    <input
                       name="description"
                       placeholder={t("O que esta aplicação faz?")}
                       maxLength={500}
@@ -215,18 +285,23 @@ export function Projects({
                   </label>
                 </div>
                 <label>
-                  {t("Pasta principal na VM")}<input
+                  {t("Pasta principal na VM")}
+                  <input
                     name="rootPath"
-                    placeholder="C:\servicos\ProjetoX"
+                    placeholder="C:\servicos\project-name"
                     required
                     maxLength={1024}
                     disabled={busy}
                   />
                   <small>
-                    {t("Use uma pasta dedicada à aplicação. Ela será criada se ainda não existir.")}</small>
+                    {t(
+                      "Use uma pasta dedicada à aplicação. Ela será criada se ainda não existir.",
+                    )}
+                  </small>
                 </label>
                 <label>
-                  {t("Arquivo de configuração do PM2")}<input
+                  {t("Arquivo de configuração do PM2")}
+                  <input
                     name="pm2ConfigPath"
                     defaultValue="ecosystem.config.js"
                     required
@@ -234,8 +309,12 @@ export function Projects({
                     disabled={busy}
                   />
                   <small>
-                    {t("Caminho relativo à pasta principal. Exemplo: config/ecosystem.config.js.")}</small>
+                    {t(
+                      "Caminho relativo à pasta principal. Exemplo: config/ecosystem.config.js.",
+                    )}
+                  </small>
                 </label>
+                <Pm2ConfigurationField disabled={busy} />
                 <div className="project-form-actions">
                   <button
                     type="button"
@@ -243,7 +322,8 @@ export function Projects({
                     onClick={() => setCreating(false)}
                     disabled={busy}
                   >
-                    {t("Cancelar")}</button>
+                    {t("Cancelar")}
+                  </button>
                   <button className="project-button" disabled={busy}>
                     {formBusy ? t("Criando…") : t("Criar projeto")}
                   </button>
@@ -253,13 +333,15 @@ export function Projects({
           )}
           <div className="project-list-caption">
             <span>
-              {filtered.length} {t(filtered.length === 1 ? 'projeto' : 'projetos')}
+              {filtered.length}{" "}
+              {t(filtered.length === 1 ? "projeto" : "projetos")}
             </span>
             <span>{t("Arquivos e publicações na VM")}</span>
           </div>
           {loading && !projects.length ? (
             <p role="status" className="project-empty">
-              {t("Carregando projetos…")}</p>
+              {t("Carregando projetos…")}
+            </p>
           ) : (
             <div className="project-grid">
               {filtered.map((project) => (
@@ -285,14 +367,18 @@ export function Projects({
                   <div className="project-card-footer">
                     <span>
                       <Package size={15} />
-                      {project.buildCount} {t("builds")}</span>
-                    <span>{t("por")}{" "}{project.createdBy}</span>
+                      {project.buildCount} {t("builds")}
+                    </span>
+                    <span>
+                      {t("por")} {project.createdBy}
+                    </span>
                     <button
                       className="project-text-link"
                       disabled={busy}
                       onClick={() => onSelectProject(project._id)}
                     >
-                      {t("Abrir projeto")}</button>
+                      {t("Abrir projeto")}
+                    </button>
                   </div>
                 </article>
               ))}
@@ -309,7 +395,9 @@ export function Projects({
               <p>
                 {query
                   ? t("Tente buscar por outro nome.")
-                  : t("Cadastre a pasta de uma aplicação para navegar pelos arquivos e publicar builds.")}
+                  : t(
+                      "Cadastre a pasta de uma aplicação para navegar pelos arquivos e publicar builds.",
+                    )}
               </p>
             </div>
           )}
@@ -322,7 +410,8 @@ export function Projects({
             className="project-button secondary"
             onClick={() => onSelectProject(null)}
           >
-            {t("Voltar aos projetos")}</button>
+            {t("Voltar aos projetos")}
+          </button>
         </div>
       )}
       {selected && (
@@ -333,7 +422,8 @@ export function Projects({
             disabled={busy}
           >
             <ArrowLeft size={16} />
-            {t("Todos os projetos")}</button>
+            {t("Todos os projetos")}
+          </button>
           <section className="repository-header">
             <div className="repository-identity">
               <FolderGit2 size={28} />
@@ -345,18 +435,33 @@ export function Projects({
               </div>
               <span className="project-location-tag">{t("Local")}</span>
             </div>
-            <button
-              className="project-button"
-              onClick={() => {
-                setTab("builds");
-                setShowBuild(true);
-                setError("");
-                setNotice("");
-              }}
-              disabled={busy || selected.deploying}
-            >
-              <Upload size={17} />
-              {t("Fazer novo build")}</button>
+            <div className="project-header-actions">
+              <button
+                className="project-button secondary"
+                disabled={busy || selected.deploying}
+                onClick={() => {
+                  setTab("settings");
+                  setShowBuild(false);
+                  setError("");
+                  setNotice("");
+                }}
+              >
+                {t("Editar projeto")}
+              </button>
+              <button
+                className="project-button"
+                onClick={() => {
+                  setTab("builds");
+                  setShowBuild(true);
+                  setError("");
+                  setNotice("");
+                }}
+                disabled={busy || selected.deploying}
+              >
+                <Upload size={17} />
+                {t("Fazer novo build")}
+              </button>
+            </div>
             <p className="repository-location">
               <FolderOpen size={15} />
               <code>{selected.rootPath}</code>
@@ -423,7 +528,10 @@ export function Projects({
                 )}
                 {formBusy && (
                   <p role="status" className="project-message">
-                    {t("Recebendo o pacote, validando os arquivos e publicando a aplicação…")}</p>
+                    {t(
+                      "Recebendo o pacote, validando os arquivos e publicando a aplicação…",
+                    )}
+                  </p>
                 )}
                 <BuildHistory
                   projectId={selected._id}
@@ -436,37 +544,14 @@ export function Projects({
               </>
             )}
             {tab === "settings" && (
-              <section className="project-form-card project-details">
-                <h2>{t("Configuração do projeto")}</h2>
-                <dl>
-                  <div>
-                    <dt>{t("Pasta principal")}</dt>
-                    <dd>
-                      <code>{selected.rootPath}</code>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t("Executar PM2 com")}</dt>
-                    <dd>
-                      <code>{selected.pathToRunPm2}</code>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t("Criado por")}</dt>
-                    <dd>{selected.createdBy}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("Data de criação")}</dt>
-                    <dd>{dateTime(selected.createdAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("Builds registrados")}</dt>
-                    <dd>{selected.buildCount}</dd>
-                  </div>
-                </dl>
-                <p className="project-form-note">
-                  {t("Cada build guarda seu pacote original e comentário. Você pode publicar uma versão anterior pelo histórico. O monitor publica pacotes prontos; inclua os arquivos e dependências necessários para executar a aplicação.")}</p>
-              </section>
+              <ProjectSettings
+                key={`${selected._id}:${selected.updatedAt}`}
+                project={selected}
+                busy={busy}
+                onSave={update}
+                onPrepareDelete={prepareDelete}
+                onDelete={remove}
+              />
             )}
           </div>
         </>

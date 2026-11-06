@@ -54,7 +54,9 @@ export function ProcessCards({
             </div>
           </dl>
           <div className="application-card-details">
-            <span>{t("Uptime")}{" "}{formatUptime(process.uptime)}</span>
+            <span>
+              {t("Uptime")} {formatUptime(process.uptime)}
+            </span>
             <span>
               {process.restarts}{" "}
               {process.restarts === 1 ? t("reinício") : t("reinícios")}

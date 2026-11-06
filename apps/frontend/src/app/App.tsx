@@ -1,4 +1,4 @@
-import { dateLocale } from '../i18n';
+import { dateLocale } from "../i18n";
 import { t } from "../i18n";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, X, Terminal, Plus, FolderOpen } from "lucide-react";
@@ -10,12 +10,12 @@ import {
   dashboardViews,
   type DashboardView,
 } from "../components/layout/Sidebar";
-import { Overview } from "../features/overview/Overview";
+import { Home } from "../features/home/Home";
 import { Applications } from "../features/processes/Applications";
 import { Settings } from "../features/settings/Settings";
 import { Projects } from "../features/projects/Projects";
 import { Builds } from "../features/projects/Builds";
-import { useLocale } from '../i18n';
+import { useLocale } from "../i18n";
 import type { Process, ProcessAction } from "../features/processes/processes";
 
 export function App() {
@@ -24,8 +24,9 @@ export function App() {
     null,
   );
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [view, setView] = useState<DashboardView>("overview");
+  const [view, setView] = useState<DashboardView>("home");
   const [username, setUsername] = useState("");
+  const [role, setRole] = useState<"admin" | "user">("user");
   const [connected, setConnected] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -65,9 +66,10 @@ export function App() {
     }
   }, []);
   useEffect(() => {
-    api<{ username: string }>("/api/auth/me")
+    api<{ username: string; role: "admin" | "user" }>("/api/auth/me")
       .then((session) => {
         setUsername(session.username);
+        setRole(session.role === "admin" ? "admin" : "user");
         setAuthenticated(true);
         return load();
       })
@@ -119,7 +121,9 @@ export function App() {
         if (!active) return;
         setConnected(false);
         setLoading(false);
-        setError(t("Conexão de atualizações interrompida. Tentando reconectar…"));
+        setError(
+          t("Conexão de atualizações interrompida. Tentando reconectar…"),
+        );
         // EventSource does not expose the HTTP status of a failed handshake.
         void api("/api/auth/me")
           .then(() => {
@@ -148,9 +152,12 @@ export function App() {
   }, [authenticated, autoRefresh]);
 
   async function onLogin() {
-    const session = await api<{ username: string }>("/api/auth/me");
+    const session = await api<{ username: string; role: "admin" | "user" }>(
+      "/api/auth/me",
+    );
     setUsername(session.username);
-    setView("overview");
+    setRole(session.role === "admin" ? "admin" : "user");
+    setView("home");
     setAuthenticated(true);
     await load();
   }
@@ -247,7 +254,7 @@ export function App() {
   }
 
   const currentView = dashboardViews.find((item) => item.id === view)!;
-  const managementPanel = view === "users" || view === "logs" ? view : null;
+  const managementPanel = view === "logs" ? view : null;
 
   if (authenticated === null)
     return (
@@ -259,7 +266,8 @@ export function App() {
   return (
     <div className="dashboard-shell">
       <a className="skip-link" href="#dashboard-main">
-        {t("Ir para o conteúdo")}</a>
+        {t("Ir para o conteúdo")}
+      </a>
       <Sidebar
         view={view}
         onNavigate={setView}
@@ -272,11 +280,11 @@ export function App() {
         <header className="dashboard-page-header">
           <div>
             <p className="page-eyebrow">MONITOR PM2</p>
-            <h1>{t(currentView.label)}</h1>
+            <h1>{view === 'home' ? t('Olá, {0}', { 0: username }) : t(currentView.label)}</h1>
             <p className="page-description">{t(currentView.description)}</p>
           </div>
           <div className="page-actions">
-            {["overview", "processes", "settings"].includes(view) && (
+            {["home", "settings"].includes(view) && (
               <button
                 type="button"
                 onClick={load}
@@ -288,16 +296,18 @@ export function App() {
                   className={loading ? "animate-spin" : ""}
                   aria-hidden="true"
                 />
-                {t("Atualizar")}</button>
+                {t("Atualizar")}
+              </button>
             )}
-            {view === "processes" && (
+            {view === "home" && (
               <button
                 type="button"
                 onClick={openAddProcess}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-action px-4 py-2.5 text-sm font-semibold text-on-action hover:bg-action-hover"
               >
                 <Plus size={16} aria-hidden="true" />
-                {t("Adicionar processo")}</button>
+                {t("Adicionar processo")}
+              </button>
             )}
           </div>
         </header>
@@ -309,7 +319,9 @@ export function App() {
             {loading
               ? t("Atualizando dados…")
               : updatedAt
-                ? t("Atualizado às {0}", { 0: updatedAt.toLocaleTimeString(dateLocale()) })
+                ? t("Atualizado às {0}", {
+                    0: updatedAt.toLocaleTimeString(dateLocale()),
+                  })
                 : t("Aguardando dados do PM2")}
           </span>
           <span className="sync-divider" />
@@ -342,25 +354,19 @@ export function App() {
             {notice}
           </p>
         )}
-        {view === "overview" && (
-          <Overview
-            processes={processes}
-            connected={connected}
-            loading={loading}
-            onProcesses={() => setView("processes")}
-          />
-        )}
-        {view === "processes" && (
-          <Applications
-            processes={processes}
-            query={query}
-            onQueryChange={setQuery}
-            loading={loading}
-            busy={busy}
-            onAction={act}
-            onLogs={showLogs}
-            onAdd={openAddProcess}
-          />
+        {view === "home" && (
+          <Home processes={processes} connected={connected} loading={loading}>
+            <Applications
+              processes={processes}
+              query={query}
+              onQueryChange={setQuery}
+              loading={loading}
+              busy={busy}
+              onAction={act}
+              onLogs={showLogs}
+              onAdd={openAddProcess}
+            />
+          </Home>
         )}
         {managementPanel && (
           <Management
@@ -393,6 +399,7 @@ export function App() {
         )}
         {view === "settings" && (
           <Settings
+            isAdmin={role === "admin"}
             onBusyChange={setManagementBusy}
             onSessionExpired={sessionExpired}
             autoRefresh={autoRefresh}
@@ -428,7 +435,8 @@ export function App() {
       >
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <h2 id="add-process-title" className="text-lg font-semibold">
-            {t("Adicionar novo processo")}</h2>
+            {t("Adicionar novo processo")}
+          </h2>
           <button
             type="button"
             aria-label={t("Fechar")}
@@ -441,9 +449,13 @@ export function App() {
         </div>
         <form onSubmit={addProcess} className="space-y-4 p-6">
           <p id="ecosystem-help" className="text-sm text-muted">
-            {t("Informe o caminho do ecosystem.config.js na VM. Todos os processos definidos nele serão iniciados.")}</p>
+            {t(
+              "Informe o caminho do ecosystem.config.js na VM. Todos os processos definidos nele serão iniciados.",
+            )}
+          </p>
           <label className="block text-sm font-medium">
-            {t("Caminho do ecosystem.config.js")}<input
+            {t("Caminho do ecosystem.config.js")}
+            <input
               autoFocus
               value={ecosystemPath}
               onChange={(event) => setEcosystemPath(event.target.value)}
@@ -478,7 +490,8 @@ export function App() {
               onClick={() => processDialog.current?.close()}
               className="rounded-lg border border-line px-4 py-2.5 text-sm hover:bg-canvas"
             >
-              {t("Cancelar")}</button>
+              {t("Cancelar")}
+            </button>
             <button
               type="submit"
               disabled={addingProcess || pickingFile || !ecosystemPath.trim()}
@@ -504,7 +517,9 @@ export function App() {
             <header className="flex items-center justify-between border-b border-line px-5 py-4">
               <div className="flex items-center gap-2">
                 <Terminal size={18} className="text-accent" />
-                <strong>{t("Logs ·")}{" "}{logs.name}</strong>
+                <strong>
+                  {t("Logs ·")} {logs.name}
+                </strong>
               </div>
               <button
                 onClick={() => setLogs(null)}

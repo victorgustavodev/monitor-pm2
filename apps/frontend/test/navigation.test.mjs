@@ -6,19 +6,26 @@ import { act, createElement } from "react";
 
 let vite, dom, root, App;
 let failProcesses = false;
+let sessionRole = "admin";
 let pendingUser;
 let pendingAction;
 let pendingProjectBuild;
 let pendingSettings;
-let retention = { enabled: false, retentionDays: 30, intervalHours: 24, nextRunAt: null };
+let pendingProjectUpdate, pendingProjectDelete;
+let retention = {
+  enabled: false,
+  retentionDays: 30,
+  intervalHours: 24,
+  nextRunAt: null,
+};
 const projectRows = [
   {
     _id: "111111111111111111111111",
     name: "Projeto X",
     description: "Aplicação principal",
-    rootPath: "C:\\servicos\\ProjetoX",
+    rootPath: "C:\\servicos\\project-name",
     pm2ConfigPath: "ecosystem.config.js",
-    pathToRunPm2: "C:\\servicos\\ProjetoX\\ecosystem.config.js",
+    pathToRunPm2: "C:\\servicos\\project-name\\ecosystem.config.js",
     createdBy: "tester",
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -117,7 +124,11 @@ before(
         body: options.body,
       });
       if (url === "/api/auth/me")
-        return json({ username: "tester", authenticated: true });
+        return json({
+          username: "tester",
+          authenticated: true,
+          role: sessionRole,
+        });
       if (url === "/api/processes")
         return failProcesses
           ? json({ message: "PM2 indisponível." }, 502)
@@ -142,10 +153,18 @@ before(
           },
         ]);
       if (url === "/api/versions") return json([]);
-      if (url === '/api/settings/retention' && options.method === 'PUT') return new Promise((done) => {
-        pendingSettings = () => { retention = { ...retention, ...JSON.parse(options.body), nextRunAt: '2026-11-07T15:00:00Z' }; done(json(retention)); };
-      });
-      if (url === '/api/settings/retention') return json(retention);
+      if (url === "/api/settings/retention" && options.method === "PUT")
+        return new Promise((done) => {
+          pendingSettings = () => {
+            retention = {
+              ...retention,
+              ...JSON.parse(options.body),
+              nextRunAt: "2026-11-07T15:00:00Z",
+            };
+            done(json(retention));
+          };
+        });
+      if (url === "/api/settings/retention") return json(retention);
       if (url === "/api/projects" && options.method === "POST") {
         const data = JSON.parse(options.body);
         const project = {
@@ -158,6 +177,44 @@ before(
         return json(project, 201);
       }
       if (url === "/api/projects") return json(projectRows);
+      if (String(url).endsWith("/deletion-preview"))
+        return json({
+          processes: [{ id: 1, name: "api-service", status: "online" }],
+          revision: "process-revision",
+        });
+      if (
+        /^\/api\/projects\/[a-f0-9]+$/.test(String(url)) &&
+        options.method === "PUT"
+      )
+        return new Promise((done) => {
+          pendingProjectUpdate = () => {
+            const project = projectRows.find(
+              (row) => row._id === String(url).split("/")[3],
+            );
+            const fields = JSON.parse(options.body);
+            Object.assign(project, fields, {
+              updatedAt: "2026-11-06T18:00:00Z",
+              pathToRunPm2: `${fields.rootPath}\\${fields.pm2ConfigPath}`,
+            });
+            done(json(project));
+          };
+        });
+      if (
+        /^\/api\/projects\/[a-f0-9]+$/.test(String(url)) &&
+        options.method === "DELETE"
+      )
+        return new Promise((done) => {
+          pendingProjectDelete = () => {
+            const id = String(url).split("/")[3];
+            projectRows.splice(
+              projectRows.findIndex((row) => row._id === id),
+              1,
+            );
+            for (let i = buildRows.length - 1; i >= 0; i--)
+              if (buildRows[i].projectId === id) buildRows.splice(i, 1);
+            done(new Response(null, { status: 204 }));
+          };
+        });
       if (String(url).includes("/files?path=")) {
         const path = new URL(String(url), "http://localhost").searchParams.get(
           "path",
@@ -280,11 +337,9 @@ after(async () => {
 });
 
 function navigation(label) {
-  return [
-    ...document.querySelectorAll(
-      'nav.sidebar-nav button',
-    ),
-  ].find((button) => button.querySelector("span")?.textContent === label);
+  return [...document.querySelectorAll("nav.sidebar-nav button")].find(
+    (button) => button.querySelector("span")?.textContent === label,
+  );
 }
 
 test("SSE applies metric updates and PM2 recovery without polling, and detects connection loss", async () => {
@@ -326,16 +381,28 @@ test("SSE applies metric updates and PM2 recovery without polling, and detects c
   );
 });
 async function go(label) {
+  if (label === "Usuários") {
+    await go("Configurações");
+    await act(async () =>
+      [...document.querySelectorAll("main button")]
+        .find((button) => button.textContent.trim() === "Acessar usuários")
+        .click(),
+    );
+    assert.ok(document.querySelector('input[name="username"]'));
+    return;
+  }
   const button = navigation(label);
   assert.ok(button, label);
   await act(async () => button.click());
   assert.equal(navigation(label).getAttribute("aria-current"), "page");
-  assert.equal(document.querySelector("h1").textContent, label);
+  const homeGreeting = { 'pt-BR': 'Olá, tester', en: 'Hello, tester', es: 'Hola, tester' };
+  assert.equal(document.querySelector("h1").textContent, ['Home', 'Inicio'].includes(label) ? homeGreeting[document.documentElement.lang] : label);
 }
 
-test("sidebar exposes seven working destinations and the overview uses real process data", async () => {
-  assert.equal(document.querySelectorAll("nav button").length, 7);
-  assert.equal(document.querySelector("h1").textContent, "Visão geral");
+test("sidebar exposes five destinations and Home combines metrics with all process controls", async () => {
+  assert.equal(document.querySelectorAll("nav button").length, 5);
+  assert.equal(navigation("Usuários"), undefined);
+  assert.equal(document.querySelector("h1").textContent, "Olá, tester");
   assert.ok(document.querySelector('.sidebar-logo[alt="KPMG"]'));
   assert.match(
     document.querySelector(".sidebar-account").textContent,
@@ -344,14 +411,14 @@ test("sidebar exposes seven working destinations and the overview uses real proc
   assert.equal(document.querySelectorAll(".metric-card").length, 4);
   assert.match(document.querySelector(".overview-metrics").textContent, /1\/2/);
   assert.match(
-    document.querySelector(".overview-processes").textContent,
+    document.querySelector(".applications").textContent,
     /api-service/,
   );
   assert.match(
-    document.querySelector(".overview-processes").textContent,
+    document.querySelector(".applications").textContent,
     /5500.*Configurada/,
   );
-  await go("Processos");
+  await go("Home");
   assert.ok(
     [...document.querySelectorAll("th")].some(
       (cell) => cell.textContent === "Porta",
@@ -391,11 +458,11 @@ test("sidebar exposes seven working destinations and the overview uses real proc
     document.querySelector(".dashboard-sync").textContent,
     /pausada/,
   );
-  await go("Visão geral");
+  await go("Home");
 });
 
 test("list and cards share the search and restore the saved layout after remounting", async () => {
-  await go("Processos");
+  await go("Home");
   const layoutButton = (label) =>
     [
       ...document.querySelectorAll(
@@ -445,18 +512,18 @@ test("list and cards share the search and restore the saved layout after remount
   assert.equal(document.querySelectorAll("tbody tr").length, 2);
   await act(async () => layoutButton("Cards").click());
   await go("Logs");
-  await go("Processos");
+  await go("Home");
   assert.equal(layoutButton("Cards").getAttribute("aria-pressed"), "true");
   await act(async () =>
     root.render(createElement(App, { key: "restore-layout" })),
   );
-  await go("Processos");
+  await go("Home");
   assert.equal(layoutButton("Cards").getAttribute("aria-pressed"), "true");
-  await go("Visão geral");
+  await go("Home");
 });
 
 test("cards open the process dialog and logs, and keep actions locked when switching layouts during a restart", async () => {
-  await go("Processos");
+  await go("Home");
   await act(async () =>
     document.querySelector('[aria-label="Adicionar novo processo"]').click(),
   );
@@ -520,7 +587,7 @@ test("cards open the process dialog and logs, and keep actions locked when switc
       .length,
     1,
   );
-  await go("Visão geral");
+  await go("Home");
 });
 
 test("navigation stays disabled while a user creation is pending and returns afterward", async () => {
@@ -547,7 +614,7 @@ test("navigation stays disabled while a user creation is pending and returns aft
     ),
   );
   assert.match(document.querySelector("main").textContent, /Usuário criado/);
-  await go("Visão geral");
+  await go("Home");
 });
 
 test("projects browse local files, publish builds with comments and expose them in the global history", async () => {
@@ -661,67 +728,243 @@ test("projects browse local files, publish builds with comments and expose them 
     description: "Outra aplicação",
     rootPath: "C:\\servicos\\ProjetoY",
     pm2ConfigPath: "ecosystem.config.js",
+    pm2ConfigContent: "",
   });
-  await go("Visão geral");
+  await go("Home");
 });
 
-test('overview, list and cards show plain port numbers without access links', async () => {
-  for (const view of ['Visão geral', 'Processos']) {
+test("Home list and cards show plain port numbers without access links", async () => {
+  for (const view of ["Home", "Home"]) {
     await go(view);
-    const ports = [...document.querySelectorAll('.process-port')];
-    assert.ok(ports.some(port => port.querySelector('.font-mono')?.textContent === '3000'));
-    assert.ok(ports.every(port => !port.querySelector('a, details')));
+    const ports = [...document.querySelectorAll(".process-port")];
+    assert.ok(
+      ports.some(
+        (port) => port.querySelector(".font-mono")?.textContent === "3000",
+      ),
+    );
+    assert.ok(ports.every((port) => !port.querySelector("a, details")));
   }
-  await act(async () => [...document.querySelectorAll('[aria-label="Visualização das aplicações"] button')].find(button => button.textContent === 'Cards').click());
-  const cardPort = document.querySelector('.application-card .process-port');
-  assert.equal(cardPort.querySelector('.font-mono').textContent, '3000');
-  assert.equal(cardPort.querySelector('a, details'), null);
-  await go('Visão geral');
+  await act(async () =>
+    [
+      ...document.querySelectorAll(
+        '[aria-label="Visualização das aplicações"] button',
+      ),
+    ]
+      .find((button) => button.textContent === "Cards")
+      .click(),
+  );
+  const cardPort = document.querySelector(".application-card .process-port");
+  assert.equal(cardPort.querySelector(".font-mono").textContent, "3000");
+  assert.equal(cardPort.querySelector("a, details"), null);
+  await go("Home");
 });
 
-test('retention preferences persist and block navigation while saving', async () => {
-  await go('Configurações');
-  const form = document.querySelector('.retention-form');
+test("retention preferences persist and block navigation while saving", async () => {
+  await go("Configurações");
+  const form = document.querySelector(".retention-form");
   assert.ok(form);
   assert.equal(form.querySelector('[name="retentionDays"]').disabled, true);
   await act(async () => form.querySelector('input[type="checkbox"]').click());
-  const setInput = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set;
+  const setInput = Object.getOwnPropertyDescriptor(
+    dom.window.HTMLInputElement.prototype,
+    "value",
+  ).set;
   await act(async () => {
-    setInput.call(form.querySelector('[name="retentionDays"]'), '14');
-    form.querySelector('[name="retentionDays"]').dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-    setInput.call(form.querySelector('[name="intervalHours"]'), '6');
-    form.querySelector('[name="intervalHours"]').dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    setInput.call(form.querySelector('[name="retentionDays"]'), "14");
+    form
+      .querySelector('[name="retentionDays"]')
+      .dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    setInput.call(form.querySelector('[name="intervalHours"]'), "6");
+    form
+      .querySelector('[name="intervalHours"]')
+      .dispatchEvent(new dom.window.Event("input", { bubbles: true }));
   });
-  await act(async () => form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })));
-  assert.equal(navigation('Projetos').disabled, true);
+  await act(async () =>
+    form.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    ),
+  );
+  assert.equal(navigation("Projetos").disabled, true);
   await act(async () => pendingSettings());
-  assert.deepEqual(JSON.parse(requests.findLast(request => request.url === '/api/settings/retention' && request.method === 'PUT').body), { enabled: true, retentionDays: 14, intervalHours: 6 });
-  assert.equal(navigation('Projetos').disabled, false);
-  await go('Visão geral'); await go('Configurações');
-  assert.equal(document.querySelector('[name="retentionDays"]').value, '14');
+  assert.deepEqual(
+    JSON.parse(
+      requests.findLast(
+        (request) =>
+          request.url === "/api/settings/retention" && request.method === "PUT",
+      ).body,
+    ),
+    { enabled: true, retentionDays: 14, intervalHours: 6 },
+  );
+  assert.equal(navigation("Projetos").disabled, false);
+  await go("Home");
+  await go("Configurações");
+  assert.equal(document.querySelector('[name="retentionDays"]').value, "14");
 });
 
-test('English and Spanish translate navigation, settings and projects without losing session state', async () => {
+test("English and Spanish translate navigation, settings and projects without losing session state", async () => {
   const selectLanguage = async (locale) => {
     const select = document.querySelector('select:has(option[value="pt-BR"])');
-    await act(async () => { select.value = locale; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
+    await act(async () => {
+      select.value = locale;
+      select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    });
   };
   const streamCount = streams.length;
-  await selectLanguage('en');
-  assert.equal(document.documentElement.lang, 'en');
-  assert.equal(window.localStorage.getItem('monitor-pm2:locale'), 'en');
-  assert.equal(document.querySelector('h1').textContent, 'Settings');
-  assert.match(document.querySelector('.retention-form').textContent, /Keep versions for/);
-  await go('Projects');
-  assert.match(document.querySelector('main').textContent, /Create new build/);
-  await go('Settings'); await selectLanguage('es');
-  assert.equal(document.documentElement.lang, 'es');
-  assert.equal(document.querySelector('h1').textContent, 'Configuración');
-  await go('Proyectos'); assert.match(document.querySelector('main').textContent, /Crear nuevo build/);
-  await go('Configuración'); await selectLanguage('pt-BR');
-  assert.equal(document.querySelector('h1').textContent, 'Configurações');
+  await selectLanguage("en");
+  await go('Home');
+  await go('Settings');
+  assert.equal(document.documentElement.lang, "en");
+  assert.equal(window.localStorage.getItem("monitor-pm2:locale"), "en");
+  assert.equal(document.querySelector("h1").textContent, "Settings");
+  assert.match(
+    document.querySelector(".retention-form").textContent,
+    /Keep versions for/,
+  );
+  await go("Projects");
+  assert.match(document.querySelector("main").textContent, /Create new build/);
+  await go("Settings");
+  await selectLanguage("es");
+  await go('Inicio');
+  await go('Configuración');
+  assert.equal(document.documentElement.lang, "es");
+  assert.equal(document.querySelector("h1").textContent, "Configuración");
+  await go("Proyectos");
+  assert.match(document.querySelector("main").textContent, /Crear nuevo build/);
+  await go("Configuración");
+  await selectLanguage("pt-BR");
+  assert.equal(document.querySelector("h1").textContent, "Configurações");
   assert.equal(streams.length, streamCount);
-  await go('Visão geral');
+  await go("Home");
+});
+
+test("project editing saves changes and deletion requires the project name while locking navigation", async () => {
+  await go("Projetos");
+  const button = (label) =>
+    [...document.querySelectorAll("main button")].find(
+      (node) => node.textContent.trim() === label,
+    );
+  await act(async () => button("Editar projeto").click());
+  const form = document.querySelector(".project-details .project-form");
+  assert.equal(form.querySelector('[name="name"]').value, "Projeto Y");
+  form.querySelector('[name="name"]').value = "Projeto Y atualizado";
+  form.querySelector('[name="description"]').value = "Nova descrição";
+  form.querySelector('[name="rootPath"]').value =
+    "C:\\servicos\\ProjetoY-atualizado";
+  form.querySelector('[name="pm2ConfigPath"]').value =
+    "config/ecosystem.config.js";
+  form.querySelector('[name="pm2ConfigContent"]').value =
+    'module.exports = { apps: [{ name: "app", script: "./main.js" }] };';
+  await act(async () =>
+    form.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    ),
+  );
+  assert.equal(navigation("Home").disabled, true);
+  await act(async () => pendingProjectUpdate());
+  assert.match(
+    document.querySelector(".repository-header").textContent,
+    /Projeto Y atualizado/,
+  );
+  assert.match(
+    document.querySelector(".project-details").textContent,
+    /config\/ecosystem.config.js/,
+  );
+  const saved = requests.findLast(
+    (row) => row.method === "PUT" && row.url.startsWith("/api/projects/"),
+  );
+  assert.deepEqual(JSON.parse(saved.body), {
+    name: "Projeto Y atualizado",
+    description: "Nova descrição",
+    rootPath: "C:\\servicos\\ProjetoY-atualizado",
+    pm2ConfigPath: "config/ecosystem.config.js",
+    pm2ConfigContent:
+      'module.exports = { apps: [{ name: "app", script: "./main.js" }] };',
+  });
+  assert.equal(
+    document.querySelector('[name="pm2ConfigContent"]').value,
+    JSON.parse(saved.body).pm2ConfigContent,
+  );
+  await act(async () => button("Excluir projeto").click());
+  assert.equal(button("Confirmar exclusão").disabled, true);
+  assert.match(
+    document.querySelector(".project-delete-section").textContent,
+    /pasta da aplicação na VM é preservada/,
+  );
+  assert.equal(document.querySelector('[name="stopProcesses"]').checked, false);
+  await act(async () => button("Cancelar").click());
+  assert.equal(document.querySelector('[name="deleteConfirmation"]'), null);
+  await act(async () => button("Excluir projeto").click());
+  assert.equal(document.querySelector('[name="stopProcesses"]').checked, false);
+  await act(async () =>
+    document.querySelector('[name="stopProcesses"]').click(),
+  );
+  const field = document.querySelector('[name="deleteConfirmation"]');
+  const setInput = Object.getOwnPropertyDescriptor(
+    dom.window.HTMLInputElement.prototype,
+    "value",
+  ).set;
+  await act(async () => {
+    setInput.call(field, "Projeto Y atualizado");
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  assert.equal(button("Confirmar exclusão").disabled, false);
+  await act(async () =>
+    field.form.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    ),
+  );
+  assert.equal(navigation("Home").disabled, true);
+  await act(async () => pendingProjectDelete());
+  const deletion = requests.findLast((row) => row.method === "DELETE");
+  assert.deepEqual(JSON.parse(deletion.body), {
+    stopProcesses: true,
+    processRevision: "process-revision",
+  });
+  assert.equal(document.querySelector(".repository-header"), null);
+  assert.match(
+    document.querySelector(".project-grid").textContent,
+    /Projeto X/,
+  );
+  assert.doesNotMatch(
+    document.querySelector(".project-grid").textContent,
+    /Projeto Y atualizado/,
+  );
+  assert.equal(navigation("Home").disabled, false);
+  await go("Home");
+});
+
+test("regular users can open settings but cannot see or fetch user administration", async () => {
+  sessionRole = "user";
+  const userRequests = requests.filter(
+    (row) => row.url === "/api/users",
+  ).length;
+  await act(async () =>
+    root.render(createElement(App, { key: "regular-user" })),
+  );
+  await go("Configurações");
+  assert.ok(document.querySelector(".retention-form"));
+  assert.equal(
+    [...document.querySelectorAll("button")].some(
+      (button) => button.textContent.trim() === "Acessar usuários",
+    ),
+    false,
+  );
+  assert.equal(document.querySelector('[name="username"]'), null);
+  assert.equal(
+    requests.filter((row) => row.url === "/api/users").length,
+    userRequests,
+  );
+  sessionRole = "admin";
+  await act(async () =>
+    root.render(createElement(App, { key: "administrator" })),
+  );
+  await go("Configurações");
+  assert.ok(
+    [...document.querySelectorAll("button")].some(
+      (button) => button.textContent.trim() === "Acessar usuários",
+    ),
+  );
+  await go("Home");
 });
 
 test("an authenticated user can still navigate when PM2 cannot be reached", async () => {
@@ -744,7 +987,7 @@ test("an authenticated user can still navigate when PM2 cannot be reached", asyn
   await act(async () =>
     root.render(createElement(App, { key: "initial-pm2-outage" })),
   );
-  assert.equal(document.querySelector("h1").textContent, "Visão geral");
+  assert.equal(document.querySelector("h1").textContent, "Olá, tester");
   assert.match(
     document.querySelector('[role="alert"]').textContent,
     /PM2 indisponível/,

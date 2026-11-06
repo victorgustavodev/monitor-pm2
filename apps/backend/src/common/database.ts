@@ -2,6 +2,7 @@ import { MongoClient, type Collection, type ObjectId } from "mongodb";
 import { env } from "./config";
 
 export interface UserRecord {
+  role?: "admin" | "user";
   username: string;
   passwordHash: string;
   createdAt: Date;
@@ -49,11 +50,14 @@ export interface ProjectRecord {
   rootPath: string;
   rootKey: string;
   pm2ConfigPath: string;
+  pm2ConfigContent?: string;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
   nextBuildNumber: number;
   activeBuildId?: ObjectId;
+  updatedBy?: string;
+  deleting?: boolean;
   deployment?: { buildId: ObjectId; attemptId: string };
   deploymentError?: string;
 }
@@ -138,6 +142,7 @@ export function publicUser(user: UserRecord & { _id: ObjectId }) {
   return {
     id: user._id.toHexString(),
     username: user.username,
+    role: user.role === "admin" ? "admin" : "user",
     createdAt: user.createdAt,
   };
 }

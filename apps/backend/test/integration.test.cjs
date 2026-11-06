@@ -270,6 +270,109 @@ test("network access, MongoDB authentication, builds, deployment and persisted l
   );
 
   await t.test(
+    "only database administrators can list or create users, including legacy sessions",
+    async () => {
+      assert.equal(
+        (await (await request("/api/auth/me")).json()).role,
+        "admin",
+      );
+      const login = await request("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          username: "operador",
+          password: "another-password-123",
+        }),
+      });
+      const userCookie = login.headers.get("set-cookie").split(";")[0];
+      const userRequest = (path, options = {}) =>
+        fetch(origin + path, {
+          ...options,
+          headers: { cookie: userCookie, "content-type": "application/json" },
+        });
+      assert.equal(
+        (await (await userRequest("/api/auth/me")).json()).role,
+        "user",
+      );
+      assert.equal((await userRequest("/api/users")).status, 403);
+      assert.equal(
+        (
+          await userRequest("/api/users", {
+            method: "POST",
+            body: JSON.stringify({
+              username: "forbidden",
+              password: "password-long-enough",
+              role: "admin",
+            }),
+          })
+        ).status,
+        403,
+      );
+      assert.equal(await db.users.findOne({ username: "forbidden" }), null);
+      // Old releases signed role=admin into every session; the DB must be authoritative.
+      const header = Buffer.from(
+        JSON.stringify({ alg: "HS256", typ: "JWT" }),
+      ).toString("base64url");
+      const claims = Buffer.from(
+        JSON.stringify({
+          sub: "operador",
+          role: "admin",
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        }),
+      ).toString("base64url");
+      const signature = require("node:crypto")
+        .createHmac("sha256", process.env.JWT_SECRET)
+        .update(`${header}.${claims}`)
+        .digest("base64url");
+      assert.equal(
+        (
+          await fetch(origin + "/api/users", {
+            headers: { cookie: `pm2_session=${header}.${claims}.${signature}` },
+          })
+        ).status,
+        403,
+      );
+      await db.users.updateMany(
+        { username: { $in: ["admin", "operador"] } },
+        { $unset: { role: "" } },
+      );
+      await backend("auth/users.service").bootstrapUser();
+      assert.equal(
+        (await db.users.findOne({ username: "admin" })).role,
+        "admin",
+      );
+      assert.equal(
+        (await db.users.findOne({ username: "operador" })).role,
+        "user",
+      );
+      await backend("auth/users.service").bootstrapUser();
+      assert.equal((await request("/api/users")).status, 200);
+      const promoted = await request("/api/users", {
+        method: "POST",
+        body: JSON.stringify({
+          username: "another-admin",
+          password: "another-admin-password",
+          role: "admin",
+        }),
+      });
+      assert.equal(promoted.status, 201);
+      assert.equal((await promoted.json()).role, "admin");
+      assert.equal(
+        (
+          await request("/api/users", {
+            method: "POST",
+            body: JSON.stringify({
+              username: "bad-role",
+              password: "another-admin-password",
+              role: "owner",
+            }),
+          })
+        ).status,
+        400,
+      );
+    },
+  );
+
+  await t.test(
     "extracts a real RAR, preserves exact archive, hash and metadata",
     async () => {
       const response = await upload("1.0.0", archive);

@@ -9,6 +9,9 @@ import {
   getProject,
   listProjects,
   publicProject,
+  updateProject,
+  deleteProject,
+  projectDeletionPreview,
 } from "./projects.service";
 import { browseProject } from "./project-files";
 import { projectPath, relativeProjectPath } from "./project-paths";
@@ -38,6 +41,22 @@ projectRoutes.get("/:id", async (request, response) => {
       await projectBuilds.countDocuments({ projectId: project._id }),
     ),
   );
+});
+projectRoutes.put("/:id", async (request, response) => {
+  response.json(
+    await updateProject(
+      request.params.id,
+      request.body,
+      response.locals.username,
+    ),
+  );
+});
+projectRoutes.delete("/:id", async (request, response) => {
+  await deleteProject(request.params.id, request.body);
+  response.status(204).end();
+});
+projectRoutes.get("/:id/deletion-preview", async (request, response) => {
+  response.json(await projectDeletionPreview(request.params.id));
 });
 projectRoutes.get("/:id/files", async (request, response) => {
   const project = await getProject(request.params.id);

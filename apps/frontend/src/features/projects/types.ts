@@ -1,10 +1,11 @@
-import { dateLocale } from '../../i18n';
+import { dateLocale } from "../../i18n";
 export type Project = {
   _id: string;
   name: string;
   description: string;
   rootPath: string;
   pm2ConfigPath: string;
+  pm2ConfigContent?: string;
   pathToRunPm2: string;
   createdBy: string;
   createdAt: string;
@@ -14,6 +15,7 @@ export type Project = {
   activeBuildId?: string;
   deploying: boolean;
   deploymentError?: string;
+  deleting?: boolean;
 };
 
 export type ProjectBuild = {
@@ -27,7 +29,8 @@ export type ProjectBuild = {
   createdAt: string;
   originalName: string;
   size: number;
-  status: "processing" | "ready" | "deploying" | "deployed" | "failed" | "deleting";
+  status:
+    "processing" | "ready" | "deploying" | "deployed" | "failed" | "deleting";
   archiveReady: boolean;
   extracted: boolean;
   fileCount?: number;
@@ -35,6 +38,15 @@ export type ProjectBuild = {
   deployedBy?: string;
   error?: string;
   active: boolean;
+};
+
+export type ProjectDeletionPreview = {
+  processes: Array<{ id: number; name: string; status: string }>;
+  revision: string;
+};
+export type ProjectDeletionOptions = {
+  stopProcesses: boolean;
+  processRevision: string;
 };
 
 export type BuildPage = {

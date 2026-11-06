@@ -83,13 +83,17 @@ export function BuildHistory({
       await api(`/api/projects/${build.projectId}/builds/${build._id}/deploy`, {
         method: "POST",
       });
-      setNotice(t("{0} publicado. A aplicação foi enviada ao PM2.", { 0: build.name }));
+      setNotice(
+        t("{0} publicado. A aplicação foi enviada ao PM2.", { 0: build.name }),
+      );
       await onPublished();
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401)
         onSessionExpired();
       setError(
-        reason instanceof Error ? reason.message : t("Falha ao publicar o build."),
+        reason instanceof Error
+          ? reason.message
+          : t("Falha ao publicar o build."),
       );
     } finally {
       setBusy(null);
@@ -103,7 +107,8 @@ export function BuildHistory({
         <div>
           <h2>{t("Histórico de builds")}</h2>
           <p>
-            {result?.total ?? 0} {t("builds registrados")}{projectId ? ` ${t('neste projeto')}` : ''}
+            {result?.total ?? 0} {t("builds registrados")}
+            {projectId ? ` ${t("neste projeto")}` : ""}
           </p>
         </div>
         <button
@@ -115,7 +120,8 @@ export function BuildHistory({
           disabled={loading || locked}
         >
           <RefreshCw size={15} />
-          {t("Atualizar builds")}</button>
+          {t("Atualizar builds")}
+        </button>
       </div>
       {error && (
         <p className="project-message error" role="alert">
@@ -129,11 +135,13 @@ export function BuildHistory({
       )}
       {busy && (
         <p className="project-message" role="status">
-          {t("Publicando build e atualizando a aplicação no PM2…")}</p>
+          {t("Publicando build e atualizando a aplicação no PM2…")}
+        </p>
       )}
       {loading && !result && (
         <p className="project-empty" role="status">
-          {t("Carregando builds…")}</p>
+          {t("Carregando builds…")}
+        </p>
       )}
       {result && (
         <>
@@ -181,7 +189,7 @@ export function BuildHistory({
                       <time>{dateTime(build.createdAt)}</time>
                       {build.deployedAt && (
                         <small>
-                          {t("Publicado por")}{" "}{build.deployedBy}
+                          {t("Publicado por")} {build.deployedBy}
                           <br />
                           {dateTime(build.deployedAt)}
                         </small>
@@ -193,7 +201,8 @@ export function BuildHistory({
                       </span>
                       {build.active && build.status === "deployed" && (
                         <small className="build-active">
-                          {t("Última publicação")}</small>
+                          {t("Última publicação")}
+                        </small>
                       )}
                     </td>
                     <td>
@@ -205,7 +214,8 @@ export function BuildHistory({
                             aria-label={t("Baixar {0}", { 0: build.name })}
                           >
                             <Download size={15} />
-                            {t("Pacote")}</a>
+                            {t("Pacote")}
+                          </a>
                         )}
                         <button
                           className="project-button secondary small"
@@ -236,7 +246,10 @@ export function BuildHistory({
               <Package size={32} />
               <strong>{t("Nenhum build registrado")}</strong>
               <p>
-                {t("Abra um projeto e escolha Fazer novo build para publicar a primeira versão.")}</p>
+                {t(
+                  "Abra um projeto e escolha Fazer novo build para publicar a primeira versão.",
+                )}
+              </p>
             </div>
           )}
           {result.total > result.pageSize && (
@@ -246,9 +259,11 @@ export function BuildHistory({
                 disabled={page <= 1 || loading || locked}
                 onClick={() => setPage((value) => value - 1)}
               >
-                {t("Anterior")}</button>
+                {t("Anterior")}
+              </button>
               <span>
-                {t("Página")}{" "}{page}  {t("de")}{" "}{Math.ceil(result.total / result.pageSize)}
+                {t("Página")} {page} {t("de")}{" "}
+                {Math.ceil(result.total / result.pageSize)}
               </span>
               <button
                 className="project-button secondary small"
@@ -257,7 +272,8 @@ export function BuildHistory({
                 }
                 onClick={() => setPage((value) => value + 1)}
               >
-                {t("Próxima")}</button>
+                {t("Próxima")}
+              </button>
             </div>
           )}
         </>

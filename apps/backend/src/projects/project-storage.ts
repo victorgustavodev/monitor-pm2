@@ -3,13 +3,12 @@ import type { ObjectId } from "mongodb";
 import { env } from "../common/config";
 import { HttpError } from "../common/http-error";
 
+export function projectFolder(projectId: ObjectId) {
+  return resolve(env.versionsPath, "projects", projectId.toHexString());
+}
+
 export function projectBuildFolder(projectId: ObjectId, buildId: ObjectId) {
-  return resolve(
-    env.versionsPath,
-    "projects",
-    projectId.toHexString(),
-    buildId.toHexString(),
-  );
+  return resolve(projectFolder(projectId), buildId.toHexString());
 }
 
 export function deploymentFolder(

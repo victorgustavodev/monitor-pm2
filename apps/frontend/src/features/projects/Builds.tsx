@@ -56,14 +56,16 @@ export function Builds({
           disabled={busy}
           onClick={() => setLegacy(false)}
         >
-          {t("Builds de projetos")}</button>
+          {t("Builds de projetos")}
+        </button>
         <button
           role="tab"
           aria-selected={legacy}
           disabled={busy}
           onClick={() => setLegacy(true)}
         >
-          {t("Uploads avulsos")}</button>
+          {t("Uploads avulsos")}
+        </button>
       </div>
       {error && (
         <p role="alert" className="project-message error">
@@ -73,7 +75,10 @@ export function Builds({
       {legacy ? (
         <>
           <p className="project-form-note">
-            {t("Uploads avulsos guardam versões fora das pastas cadastradas. Para publicar na pasta de uma aplicação, abra seu projeto e escolha Fazer novo build.")}</p>
+            {t(
+              "Uploads avulsos guardam versões fora das pastas cadastradas. Para publicar na pasta de uma aplicação, abra seu projeto e escolha Fazer novo build.",
+            )}
+          </p>
           <Management
             panel="versions"
             onStarted={onStarted}
@@ -85,7 +90,8 @@ export function Builds({
         <>
           <div className="project-build-filter">
             <label>
-              {t("Projeto")}<select
+              {t("Projeto")}
+              <select
                 value={projectId}
                 onChange={(event) => setProjectId(event.target.value)}
                 disabled={busy}
@@ -104,7 +110,8 @@ export function Builds({
                 disabled={busy}
                 onClick={() => onOpenProject(projectId)}
               >
-                {t("Abrir projeto")}</button>
+                {t("Abrir projeto")}
+              </button>
             )}
           </div>
           <BuildHistory

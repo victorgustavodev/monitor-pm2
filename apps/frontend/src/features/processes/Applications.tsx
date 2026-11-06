@@ -66,9 +66,9 @@ export function Applications({
           <h2 id="applications-title">{t("Aplicações")}</h2>
           <span className="applications-count">
             {query
-              ? `${filtered.length} ${t('de')} ${processes.length}`
+              ? `${filtered.length} ${t("de")} ${processes.length}`
               : processes.length}{" "}
-            {t(processes.length === 1 ? 'processo' : 'processos')}
+            {t(processes.length === 1 ? "processo" : "processos")}
           </span>
         </div>
         <div className="applications-controls">
@@ -92,14 +92,16 @@ export function Applications({
               onClick={() => changeLayout("list")}
             >
               <List size={16} aria-hidden="true" />
-              {t("Lista")}</button>
+              {t("Lista")}
+            </button>
             <button
               type="button"
               aria-pressed={layout === "cards"}
               onClick={() => changeLayout("cards")}
             >
               <LayoutGrid size={16} aria-hidden="true" />
-              {t("Cards")}</button>
+              {t("Cards")}
+            </button>
           </div>
         </div>
       </div>

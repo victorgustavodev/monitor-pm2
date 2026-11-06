@@ -1,4 +1,4 @@
-import { dateLocale } from '../../i18n';
+import { dateLocale } from "../../i18n";
 import { t } from "../../i18n";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../services/api";
@@ -17,7 +17,12 @@ type Version = {
   error?: string;
   startedAt?: string;
 };
-type User = { id: string; username: string; createdAt: string };
+type User = {
+  id: string;
+  username: string;
+  createdAt: string;
+  role: "admin" | "user";
+};
 type Log = {
   _id: string;
   kind: "audit" | "process";
@@ -120,7 +125,9 @@ export function Management({
       if (panel === "versions") {
         await api("/api/versions", { method: "POST", body: data });
         setNotice(
-          t("Build salvo e versionado. Você já pode baixar o arquivo original ou iniciar a versão."),
+          t(
+            "Build salvo e versionado. Você já pode baixar o arquivo original ou iniciar a versão.",
+          ),
         );
       } else {
         await api("/api/users", {
@@ -128,6 +135,7 @@ export function Management({
           body: JSON.stringify({
             username: data.get("username"),
             password: data.get("password"),
+            role: data.get("role"),
           }),
         });
         setNotice(t("Usuário criado. Ele já pode entrar no painel."));
@@ -144,7 +152,10 @@ export function Management({
   async function start(version: Version) {
     if (
       !window.confirm(
-        t("Iniciar {0} {1}? Os processos com os mesmos nomes no PM2 serão atualizados para este build.", { 0: version.project, 1: version.version }),
+        t(
+          "Iniciar {0} {1}? Os processos com os mesmos nomes no PM2 serão atualizados para este build.",
+          { 0: version.project, 1: version.version },
+        ),
       )
     )
       return;
@@ -206,13 +217,17 @@ export function Management({
         {panel === "versions" && (
           <>
             <p className="mb-4 text-sm text-muted">
-              {t("Envie o build pronto em ZIP, RAR, 7z, TAR, TAR.GZ, TAR.BZ2 ou TAR.XZ. Cada versão preserva o arquivo original. Para iniciar pelo painel, inclua um ecosystem.config.js com caminhos relativos ao build.")}</p>
+              {t(
+                "Envie o build pronto em ZIP, RAR, 7z, TAR, TAR.GZ, TAR.BZ2 ou TAR.XZ. Cada versão preserva o arquivo original. Para iniciar pelo painel, inclua um ecosystem.config.js com caminhos relativos ao build.",
+              )}
+            </p>
             <form
               onSubmit={submit}
               className="mb-5 flex flex-wrap items-end gap-3"
             >
               <label className="min-w-40 flex-1 text-sm">
-                {t("Projeto")}<input
+                {t("Projeto")}
+                <input
                   name="project"
                   required
                   maxLength={80}
@@ -223,7 +238,8 @@ export function Management({
                 />
               </label>
               <label className="min-w-32 flex-1 text-sm">
-                {t("Versão")}<input
+                {t("Versão")}
+                <input
                   name="version"
                   required
                   maxLength={80}
@@ -234,7 +250,8 @@ export function Management({
                 />
               </label>
               <label className="min-w-52 flex-1 text-sm">
-                {t("Build compactado")}<input
+                {t("Build compactado")}
+                <input
                   name="build"
                   type="file"
                   accept=".zip,.rar,.7z,.tar,.tar.gz,.tgz,.tar.bz2,.tbz2,.tbz,.tar.xz,.txz"
@@ -280,7 +297,7 @@ export function Management({
                         {date(version.createdAt)}
                         {version.startedAt && (
                           <p className="text-xs text-muted">
-                            {t("Última execução:")}{" "}{date(version.startedAt)}
+                            {t("Última execução:")} {date(version.startedAt)}
                           </p>
                         )}
                       </td>
@@ -291,7 +308,8 @@ export function Management({
                             className="mr-3 text-link hover:text-link-hover hover:underline"
                             href={`/api/versions/${version._id}/archive`}
                           >
-                            {t("Baixar original")}</a>
+                            {t("Baixar original")}
+                          </a>
                         )}
                         <button
                           type="button"
@@ -299,16 +317,21 @@ export function Management({
                           disabled={
                             busy ||
                             !version.ecosystem ||
-                            ["processing", "starting", "deleting"].includes(version.status)
+                            ["processing", "starting", "deleting"].includes(
+                              version.status,
+                            )
                           }
                           onClick={() => start(version)}
                           title={
                             version.ecosystem
                               ? t("Iniciar esta versão no PM2")
-                              : t("Inclua exatamente um ecosystem.config.js no arquivo compactado para iniciar")
+                              : t(
+                                  "Inclua exatamente um ecosystem.config.js no arquivo compactado para iniciar",
+                                )
                           }
                         >
-                          {t("Iniciar")}</button>
+                          {t("Iniciar")}
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -317,20 +340,25 @@ export function Management({
             </div>
             {!loading && !versions.length && (
               <p className="py-6 text-center text-sm text-muted">
-                {t("Nenhuma versão enviada.")}</p>
+                {t("Nenhuma versão enviada.")}
+              </p>
             )}
           </>
         )}
         {panel === "users" && (
           <>
             <p className="mb-4 text-sm text-muted">
-              {t("Os usuários cadastrados podem gerenciar processos, versões e criar outros usuários.")}</p>
+              {t(
+                "Usuários comuns podem operar o monitor. Apenas administradores acessam o gerenciamento de usuários.",
+              )}
+            </p>
             <form
               onSubmit={submit}
               className="mb-5 flex flex-wrap items-end gap-3"
             >
               <label className="min-w-40 flex-1 text-sm">
-                {t("Usuário")}<input
+                {t("Usuário")}
+                <input
                   name="username"
                   autoComplete="off"
                   required
@@ -342,7 +370,8 @@ export function Management({
                 />
               </label>
               <label className="min-w-52 flex-1 text-sm">
-                {t("Senha (mínimo 12 caracteres)")}<input
+                {t("Senha (mínimo 12 caracteres)")}
+                <input
                   name="password"
                   type="password"
                   autoComplete="new-password"
@@ -352,6 +381,18 @@ export function Management({
                   disabled={busy}
                   className={inputStyle}
                 />
+              </label>
+              <label className="min-w-40 flex-1 text-sm">
+                {t("Perfil")}
+                <select
+                  name="role"
+                  defaultValue="user"
+                  disabled={busy}
+                  className={inputStyle}
+                >
+                  <option value="user">{t("Usuário comum")}</option>
+                  <option value="admin">{t("Administrador")}</option>
+                </select>
               </label>
               <button disabled={busy} className={buttonStyle}>
                 {busy ? t("Criando…") : t("Criar usuário")}
@@ -365,7 +406,10 @@ export function Management({
                 >
                   <strong>{user.username}</strong>
                   <span className="text-muted">
-                    {t("Criado em")}{" "}{date(user.createdAt)}
+                    {t(
+                      user.role === "admin" ? "Administrador" : "Usuário comum",
+                    )}{" "}
+                    · {t("Criado em")} {date(user.createdAt)}
                   </span>
                 </li>
               ))}
@@ -376,7 +420,8 @@ export function Management({
           <>
             <div className="mb-4 flex flex-wrap items-end gap-3">
               <label className="text-sm">
-                {t("Tipo")}<select
+                {t("Tipo")}
+                <select
                   value={kind}
                   onChange={(event) => setKind(event.target.value)}
                   className={inputStyle}
@@ -387,7 +432,8 @@ export function Management({
               </label>
               {kind === "process" && (
                 <label className="text-sm">
-                  {t("ID do processo (opcional)")}<input
+                  {t("ID do processo (opcional)")}
+                  <input
                     type="number"
                     min="0"
                     step="1"
@@ -399,7 +445,10 @@ export function Management({
               )}
             </div>
             <p className="mb-3 text-xs text-muted">
-              {t("Últimos 100 registros. A saída dos processos é coletada a cada 5 segundos.")}</p>
+              {t(
+                "Últimos 100 registros. A saída dos processos é coletada a cada 5 segundos.",
+              )}
+            </p>
             <div className="max-h-[500px] space-y-3 overflow-auto">
               {logs.map((log) => (
                 <article
@@ -433,7 +482,8 @@ export function Management({
             </div>
             {!loading && !logs.length && (
               <p className="py-6 text-center text-sm text-muted">
-                {t("Nenhum log salvo para este filtro.")}</p>
+                {t("Nenhum log salvo para este filtro.")}
+              </p>
             )}
           </>
         )}

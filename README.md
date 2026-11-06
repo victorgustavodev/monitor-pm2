@@ -4,7 +4,7 @@ Painel web para visualizar e operar processos do PM2 em uma VM Windows. O fronte
 
 ## Funcionalidades
 
-- Navegação lateral com visão geral, processos, projetos, logs, usuários, builds e configurações; em celular, a navegação fica no topo.
+- Navegação lateral com Home, projetos, logs, builds e configurações; em celular, a navegação fica no topo. A Home reúne quatro indicadores e a lista completa de processos, com busca e modos Lista/Cards.
 - Projetos com navegação pelos arquivos da VM, visualização de texto, download e histórico de builds com autor e comentário obrigatório.
 - Publicação de builds na pasta cadastrada do projeto, execução do ecosystem PM2 e possibilidade de republicar versões anteriores.
 - Limpeza automática opcional, com prazo de retenção e intervalo configuráveis, preservando builds ativos e arquivos referenciados pelo PM2.
@@ -58,7 +58,7 @@ apps/
       features/    # Telas e componentes agrupados por funcionalidade
         auth/
         management/
-        overview/
+        home/
         processes/
         projects/
         settings/
@@ -110,7 +110,7 @@ Se houver IIS ou outro proxy reverso, desabilite o buffering e a compressão par
 
 A coluna **Porta** prioriza as portas TCP em escuta no Windows, associadas ao PID do processo PM2 e aos seus subprocessos. Portas repetidas em IPv4/IPv6 aparecem uma única vez; aplicações com vários listeners exibem todas as portas. A inspeção é compartilhada por 5 segundos para evitar consultas repetidas ao sistema.
 
-Visão geral, lista e cards exibem somente os números das portas, sem links de acesso ou descoberta de IP/DNS.
+A Home, nos modos lista e cards, exibe somente os números das portas, sem links de acesso ou descoberta de IP/DNS.
 
 Quando não há uma porta confirmada em escuta ou a inspeção não está disponível, o painel pode mostrar a porta declarada em `PORT`, `port`, `env.PORT` ou nos argumentos `--port`/`-p`, com a indicação **Configurada**. Processos sem informação suficiente exibem `—`. A coluna mostra portas locais da aplicação; o endereço e a porta de publicação de um proxy reverso continuam definidos na infraestrutura.
 
@@ -132,11 +132,21 @@ A paleta e os tokens semânticos de cores ficam em `apps/frontend/src/styles/tok
 
 Na primeira inicialização, se a coleção `users` estiver vazia, o monitor cria o primeiro usuário com `ADMIN_USERNAME` e `ADMIN_PASSWORD` do `.env`. A senha deve ter entre 12 e 256 caracteres. Depois disso, os logins consultam o MongoDB; alterar essas variáveis não altera a senha de um usuário já cadastrado.
 
-Na área **Usuários** do painel é possível listar e criar usuários. Todos os usuários têm acesso à administração dos processos, versões, logs e ao cadastro de outros usuários. Não há cadastro público. Nomes de usuário são salvos em minúsculas e não podem se repetir.
+Em **Configurações → Acessar usuários**, administradores podem listar e criar usuários, escolhendo os perfis **Usuário comum** (`user`, padrão) ou **Administrador** (`admin`). A opção e a tela só aparecem para administradores; a API também recusa listagem e criação por usuários comuns com HTTP 403. Usuários comuns continuam operando processos, projetos, builds, logs e as demais configurações. Não há cadastro público. Nomes de usuário são salvos em minúsculas e não podem se repetir.
+
+O primeiro usuário criado pelo `.env` é administrador. Na atualização de um banco antigo sem perfis, o sistema atribui `admin` à conta legada correspondente a `ADMIN_USERNAME`; se ela não existir, escolhe a conta legada mais antiga. As demais contas sem perfil recebem `user`. Perfis já definidos são preservados. A autorização consulta o perfil do MongoDB a cada requisição e não confia no antigo campo `role=admin` dos tokens.
 
 ## Projetos e builds
 
-1. Abra **Projetos → Novo projeto** e informe nome, pasta principal absoluta na VM (por exemplo, `C:\servicos\ProjetoX`) e caminho relativo do `ecosystem.config.js` dentro dela.
+Para editar, abra o projeto e clique em **Editar projeto**. Altere nome, descrição, pasta principal ou caminho do ecosystem e clique em **Salvar alterações**. O histórico é preservado. Alterar a pasta não move arquivos nem reinicia processos; o indicador de build ativo é limpo e a próxima publicação usa o novo destino.
+
+Se o build gerado não contém o ecosystem, preencha **Configuração PM2 salva no projeto (opcional)** com o conteúdo `module.exports = { apps: [...] }` e salve. Isso também está disponível no cadastro. Você poderá enviar apenas os arquivos da aplicação no ZIP: o monitor cria o arquivo no caminho configurado durante a publicação. O arquivo incluído no ZIP tem prioridade; quando ele falta, usa a configuração salva; sem configuração salva, aceita o arquivo já existente na VM. O caminho `script` é relativo à pasta do ecosystem e precisa corresponder à estrutura do ZIP (`./dist/main.js` ou `./main.js`, por exemplo).
+
+A configuração salva é copiada para o armazenamento do build na primeira publicação que a utiliza, preservando essa cópia para republicações; o ZIP original permanece intacto. Salvar uma configuração nova só afeta novos builds que não tragam ecosystem. Se um build falhou apenas por falta do arquivo, salve a configuração e clique em **Publicar** nesse build para tentar novamente.
+
+Para excluir, abra **Sobre o projeto → Excluir projeto**. A confirmação mostra os processos vinculados pelos caminhos da aplicação e pergunta se deseja encerrá-los. A opção começa desmarcada: assim os processos continuam como estão. Se marcar, eles são parados com `pm2 stop`, mantendo seus registros e salvando o estado no PM2. Digite o nome do projeto para confirmar. A exclusão remove o cadastro, o histórico e os pacotes armazenados; preserva a pasta da aplicação na VM. Edição e exclusão são bloqueadas durante publicações ou recuperação pendente. Arquivos armazenados ainda referenciados pelo PM2 precisam deixar de ser usados antes da exclusão.
+
+1. Abra **Projetos → Novo projeto** e informe nome, pasta principal absoluta na VM (por exemplo, `C:\servicos\project-name`) e caminho relativo do `ecosystem.config.js` dentro dela.
 2. Abra o projeto para navegar em **Arquivos**, consultar **Builds** ou conferir os caminhos em **Sobre o projeto**. O acesso é direto ao sistema de arquivos da mesma VM, sem FTP.
 3. Clique em **Fazer novo build**, informe um nome único, descreva as alterações no comentário obrigatório e selecione o pacote compactado.
 4. **Enviar e publicar** guarda o original, extrai uma cópia para o histórico, aplica os arquivos na pasta principal e executa o ecosystem configurado no PM2. O autor é obtido da sessão autenticada.
@@ -231,7 +241,7 @@ Se os aplicativos PM2 também precisam ressurgir após reinicialização, salve 
 As rotas abaixo exigem sessão, exceto login e health:
 
 - `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`
-- `GET /api/users`, `POST /api/users` com JSON `{ "username": "operador", "password": "senha-com-12-ou-mais" }`
+- `GET /api/users`, `POST /api/users` com JSON `{ "username": "operador", "password": "senha-com-12-ou-mais", "role": "user" }`; exclusivos de administradores, `role` opcional (`user` ou `admin`)
 - `GET /api/settings/retention`, `PUT /api/settings/retention` com JSON `{ "enabled": true, "retentionDays": 30, "intervalHours": 24 }`; limites: 1–3650 dias e 1–8760 horas
 - `GET /api/processes`
 - `GET /api/processes/stream` (SSE: eventos `processes`, `metrics-error` e `session-expired`)
@@ -240,6 +250,8 @@ As rotas abaixo exigem sessão, exceto login e health:
 - `POST /api/ecosystems` com JSON `{ "path": "C:\\servicos\\minha-app\\ecosystem.config.js" }`
 - `POST /api/ecosystems/pick` para abrir o seletor na sessão Windows da VM
 - `GET /api/projects`, `POST /api/projects`, `GET /api/projects/:id`
+- `PUT /api/projects/:id` com JSON `name`, `description`, `rootPath`, `pm2ConfigPath`; `DELETE /api/projects/:id` remove cadastro, builds e arquivos armazenados, preservando a pasta publicada
+- `GET /api/projects/:id/deletion-preview` lista processos vinculados e retorna uma revisão; `DELETE /api/projects/:id` aceita `{ "stopProcesses": true, "processRevision": "revisão recebida" }` para pará-los antes de excluir
 - `GET /api/projects/:id/files?path=...`, `GET /api/projects/:id/files/download?path=...`
 - `GET /api/projects/:id/builds?page=1`, `GET /api/builds?projectId=...&page=1`
 - `POST /api/projects/:id/builds` com multipart: `name`, `comments` e arquivo `build`; publica automaticamente
@@ -263,4 +275,4 @@ Os testes do backend usam um MongoDB temporário (o binário é baixado na prime
 
 Os testes de projetos também cobrem isolamento de pastas, navegação, publicação, comentário obrigatório, autoria, concorrência, retorno a builds anteriores e recuperação de arquivos após falhas ou reinício.
 
-Os testes do frontend usam um DOM simulado e respostas de API de teste para verificar a navegação entre as sete áreas, a atualização automática, o bloqueio durante cadastros e uploads, o fluxo de projetos e o comportamento quando o PM2 está indisponível. Eles não iniciam processos PM2 nem alteram o banco real.
+Os testes do frontend usam um DOM simulado e respostas de API de teste para verificar a navegação entre as cinco áreas, a Home com métricas e processos, o acesso de administradores a Usuários dentro de Configurações, a atualização automática, os bloqueios durante operações e a confirmação opcional de parada ao excluir projetos. Eles não iniciam processos PM2 nem alteram o banco real.

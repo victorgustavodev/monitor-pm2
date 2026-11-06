@@ -29,6 +29,12 @@ let failDeployment = false,
   holdDeployment,
   releaseDeployment;
 const deployments = [];
+let managedProject,
+  referencedPaths = [],
+  pm2Unavailable = false;
+let linkedRows = [],
+  stoppedProcesses = [],
+  stopFailure = false;
 
 before(
   async () => {
@@ -47,6 +53,24 @@ before(
       COOKIE_SECURE: "false",
     });
     const pm2 = require("../dist/pm2/pm2.service");
+    const { selectProjectProcesses } = require("../dist/pm2/project-processes");
+    const { HttpError } = require("../dist/common/http-error");
+    pm2.getProjectProcesses = async (root) =>
+      selectProjectProcesses(linkedRows, root);
+    pm2.stopProjectProcesses = async (root, revision) => {
+      const preview = selectProjectProcesses(linkedRows, root);
+      if (revision !== preview.revision)
+        throw new HttpError(409, "Os processos vinculados mudaram.");
+      if (stopFailure) throw new HttpError(502, "Falha ao encerrar processo.");
+      stoppedProcesses.push(...preview.processes.map((process) => process.id));
+      for (const row of linkedRows)
+        if (stoppedProcesses.includes(row.pm_id))
+          row.pm2_env.status = "stopped";
+    };
+    pm2.processArtifactPaths = async () => {
+      if (pm2Unavailable) throw new Error("PM2 indisponível");
+      return referencedPaths;
+    };
     pm2.deployEcosystem = async (path) => {
       await readFile(path);
       deployments.push(path);
@@ -624,5 +648,565 @@ test("projects, file browsing and project build publication", async (t) => {
       );
       assert.equal((await request("/api/builds?page=0")).status, 400);
     },
+  );
+});
+
+test("updates a project while preserving its history and validating names, folders and configuration", async () => {
+  managedProject = await json(
+    await post("/api/projects", {
+      name: "Editable",
+      rootPath: resolve(directory, "editable"),
+    }),
+    201,
+  );
+  const body = {
+    name: "Editable renamed",
+    description: "Nova descrição",
+    rootPath: managedProject.rootPath,
+    pm2ConfigPath: "ecosystem.config.js",
+  };
+  const path = `/api/projects/${managedProject._id}`;
+  assert.equal(
+    (
+      await fetch(origin + path, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+    ).status,
+    401,
+  );
+  const build = await json(
+    await upload(managedProject._id, "edit-v1", packageFiles("v1")),
+    201,
+  );
+  const updated = await json(
+    await request(path, { method: "PUT", body: JSON.stringify(body) }),
+  );
+  assert.equal(updated._id, managedProject._id);
+  assert.equal(updated.name, body.name);
+  assert.equal(updated.description, body.description);
+  assert.equal(updated.createdBy, managedProject.createdBy);
+  assert.equal(updated.createdAt, managedProject.createdAt);
+  assert.equal(updated.updatedBy, "admin");
+  assert.equal(updated.buildCount, 1);
+  assert.equal(updated.activeBuildId, build._id);
+  assert.equal(updated.nextBuildNumber, 1);
+  assert.equal(
+    (await json(await request(`${path}/builds`))).items[0].projectName,
+    body.name,
+  );
+  for (const [changes, status] of [
+    [{ name: "Projeto X" }, 409],
+    [{ rootPath: project.rootPath }, 409],
+    [{ rootPath: resolve(project.rootPath, "nested") }, 409],
+    [{ rootPath: "relative/path" }, 400],
+    [{ rootPath: resolve(directory, "archives") }, 400],
+    [{ pm2ConfigPath: "../ecosystem.config.js" }, 400],
+    [{ description: "x".repeat(501) }, 400],
+  ]) {
+    assert.equal(
+      (
+        await request(path, {
+          method: "PUT",
+          body: JSON.stringify({ ...body, ...changes }),
+        })
+      ).status,
+      status,
+    );
+  }
+  managedProject = updated;
+});
+
+test("changing project destination preserves old files and resets only the active-build pointer", async () => {
+  const previous = managedProject.rootPath;
+  const body = {
+    name: managedProject.name,
+    description: managedProject.description,
+    rootPath: resolve(directory, "editable-moved"),
+    pm2ConfigPath: "config/ecosystem.config.js",
+  };
+  const updated = await json(
+    await request(`/api/projects/${managedProject._id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  );
+  assert.equal(updated.activeBuildId, undefined);
+  assert.equal(updated.buildCount, 1);
+  assert.equal(
+    updated.pathToRunPm2,
+    resolve(body.rootPath, body.pm2ConfigPath),
+  );
+  assert.match(await readFile(resolve(previous, "dist/main.js"), "utf8"), /v1/);
+  assert.deepEqual(await readdir(updated.rootPath), []);
+  managedProject = await json(
+    await request(`/api/projects/${updated._id}`, {
+      method: "PUT",
+      body: JSON.stringify({ ...body, pm2ConfigPath: "ecosystem.config.js" }),
+    }),
+  );
+});
+
+test("project updates and deletion cannot overlap a publication or pending recovery", async () => {
+  const path = `/api/projects/${managedProject._id}`;
+  const body = {
+    name: managedProject.name,
+    rootPath: managedProject.rootPath,
+    pm2ConfigPath: managedProject.pm2ConfigPath,
+  };
+  holdDeployment = true;
+  releaseDeployment = undefined;
+  const pending = upload(managedProject._id, "edit-v2", packageFiles("v2"));
+  try {
+    const deadline = Date.now() + 5000;
+    while (!releaseDeployment && Date.now() < deadline)
+      await new Promise((done) => setTimeout(done, 10));
+    assert.ok(releaseDeployment);
+    assert.equal(
+      (await request(path, { method: "PUT", body: JSON.stringify(body) }))
+        .status,
+      409,
+    );
+    assert.equal((await request(path, { method: "DELETE" })).status, 409);
+  } finally {
+    holdDeployment = false;
+    releaseDeployment?.();
+  }
+  await json(await pending, 201);
+  const { ObjectId } = require("mongodb");
+  const id = new ObjectId(managedProject._id);
+  await db.projects.updateOne(
+    { _id: id },
+    {
+      $set: {
+        deployment: { buildId: new ObjectId(), attemptId: randomUUID() },
+      },
+    },
+  );
+  assert.equal(
+    (await request(path, { method: "PUT", body: JSON.stringify(body) })).status,
+    409,
+  );
+  assert.equal((await request(path, { method: "DELETE" })).status, 409);
+  await db.projects.updateOne({ _id: id }, { $unset: { deployment: "" } });
+});
+
+test("deleting removes project records and archives while preserving the application and other projects", async () => {
+  const path = `/api/projects/${managedProject._id}`;
+  const folder = resolve(directory, "archives/projects", managedProject._id);
+  assert.equal((await fetch(origin + path, { method: "DELETE" })).status, 401);
+  referencedPaths = [resolve(folder, "source/app.js")];
+  assert.equal((await request(path, { method: "DELETE" })).status, 409);
+  referencedPaths = [];
+  pm2Unavailable = true;
+  assert.equal((await request(path, { method: "DELETE" })).status, 502);
+  pm2Unavailable = false;
+  const { ObjectId } = require("mongodb");
+  const id = new ObjectId(managedProject._id);
+  // Simulate a restart after deletion was marked, before artifacts were removed.
+  await db.projects.updateOne({ _id: id }, { $set: { deleting: true } });
+  assert.equal((await request(path + "/files")).status, 409);
+  const history = await json(await request(`/api/builds?projectId=${id}`));
+  assert.ok(history.items.length > 0);
+  assert.equal(
+    (
+      await request(`${path}/builds/${history.items[0]._id}/deploy`, {
+        method: "POST",
+      })
+    ).status,
+    409,
+  );
+  assert.equal((await request(path, { method: "DELETE" })).status, 204);
+  assert.equal((await request(path)).status, 404);
+  await assert.rejects(readdir(folder), { code: "ENOENT" });
+  assert.equal(await db.projectBuilds.countDocuments({ projectId: id }), 0);
+  assert.match(
+    await readFile(resolve(managedProject.rootPath, "dist/main.js"), "utf8"),
+    /v2/,
+  );
+  assert.equal((await request(`/api/projects/${project._id}`)).status, 200);
+  assert.equal((await request(path, { method: "DELETE" })).status, 404);
+});
+
+test("project deletion rejects storage junctions without touching their external target", async () => {
+  const entry = await json(
+    await post("/api/projects", {
+      name: "Delete junction",
+      rootPath: resolve(directory, "junction-app"),
+    }),
+    201,
+  );
+  const outside = resolve(directory, "junction-target");
+  await mkdir(outside);
+  await writeFile(resolve(outside, "keep.txt"), "keep");
+  const folder = resolve(directory, "archives/projects", entry._id);
+  await symlink(outside, folder, "junction");
+  assert.equal(
+    (await request(`/api/projects/${entry._id}`, { method: "DELETE" })).status,
+    400,
+  );
+  assert.equal(await readFile(resolve(outside, "keep.txt"), "utf8"), "keep");
+  assert.equal((await request(`/api/projects/${entry._id}`)).status, 200);
+});
+
+test("saved PM2 configuration is validated without executing it and is preserved by older clients", async () => {
+  const marker = resolve(directory, "must-not-execute.txt");
+  const content = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed');\nmodule.exports = { apps: [] };`;
+  const body = {
+    name: "Configuration validation",
+    rootPath: resolve(directory, "configuration-validation"),
+    pm2ConfigContent: content,
+  };
+  const entry = await json(await post("/api/projects", body), 201);
+  assert.equal(entry.pm2ConfigContent, content);
+  await assert.rejects(readFile(marker), { code: "ENOENT" });
+  const path = `/api/projects/${entry._id}`;
+  for (const invalid of ["module.exports = {", 42, "é".repeat(9000)]) {
+    assert.equal(
+      (
+        await request(path, {
+          method: "PUT",
+          body: JSON.stringify({ ...body, pm2ConfigContent: invalid }),
+        })
+      ).status,
+      400,
+    );
+  }
+  const { pm2ConfigContent, ...legacyBody } = body;
+  const kept = await json(
+    await request(path, { method: "PUT", body: JSON.stringify(legacyBody) }),
+  );
+  assert.equal(kept.pm2ConfigContent, content);
+  const cleared = await json(
+    await request(path, {
+      method: "PUT",
+      body: JSON.stringify({ ...legacyBody, pm2ConfigContent: "" }),
+    }),
+  );
+  assert.equal(cleared.pm2ConfigContent, "");
+});
+
+test("ZIPs without an ecosystem use saved configuration snapshots while preserving the original archive", async () => {
+  const configA =
+    'module.exports={apps:[{name:"saved-app",script:"./dist/main.js",env:{RELEASE:"a"}}]};';
+  const configB = configA.replace('"a"', '"b"');
+  const configC = configA.replace('"a"', '"zip"');
+  const body = {
+    name: "Saved configuration",
+    rootPath: resolve(directory, "saved-configuration"),
+    pm2ConfigContent: configA,
+  };
+  const entry = await json(await post("/api/projects", body), 201);
+  const path = `/api/projects/${entry._id}`;
+  const firstFiles = [["dist/main.js", 'console.log("release-a")']];
+  const firstBuild = await json(
+    await upload(entry._id, "without-ecosystem-v1", firstFiles),
+    201,
+  );
+  const liveConfig = resolve(entry.rootPath, "ecosystem.config.js");
+  assert.equal(await readFile(liveConfig, "utf8"), configA);
+  assert.equal(deployments.at(-1), liveConfig);
+  const archivedConfig = resolve(
+    directory,
+    "archives/projects",
+    entry._id,
+    firstBuild._id,
+    "source/ecosystem.config.js",
+  );
+  assert.equal(await readFile(archivedConfig, "utf8"), configA);
+  assert.deepEqual(
+    Buffer.from(
+      await (
+        await request(`${path}/builds/${firstBuild._id}/archive`)
+      ).arrayBuffer(),
+    ),
+    zip(firstFiles),
+  );
+  await json(
+    await request(path, {
+      method: "PUT",
+      body: JSON.stringify({ ...body, pm2ConfigContent: configB }),
+    }),
+  );
+  assert.equal(
+    await readFile(liveConfig, "utf8"),
+    configA,
+    "Saving settings does not change live files",
+  );
+  await json(
+    await upload(entry._id, "without-ecosystem-v2", [
+      ["dist/main.js", 'console.log("release-b")'],
+    ]),
+    201,
+  );
+  assert.equal(await readFile(liveConfig, "utf8"), configB);
+  await json(await post(`${path}/builds/${firstBuild._id}/deploy`, {}));
+  assert.equal(await readFile(liveConfig, "utf8"), configA);
+  await json(
+    await upload(entry._id, "ecosystem-from-zip", [
+      ["ecosystem.config.js", configC],
+      ["dist/main.js", 'console.log("zip")'],
+    ]),
+    201,
+  );
+  assert.equal(
+    await readFile(liveConfig, "utf8"),
+    configC,
+    "The archive configuration takes precedence",
+  );
+  await json(
+    await request(path, {
+      method: "PUT",
+      body: JSON.stringify({ ...body, pm2ConfigContent: "" }),
+    }),
+  );
+  await json(
+    await upload(entry._id, "use-existing-vm-config", [
+      ["dist/main.js", 'console.log("vm")'],
+    ]),
+    201,
+  );
+  assert.equal(
+    await readFile(liveConfig, "utf8"),
+    configC,
+    "An existing VM configuration is preserved",
+  );
+});
+
+test("saving configuration allows retrying a missing-ecosystem build and PM2 failure restores the previous configuration", async () => {
+  const body = {
+    name: "Retry saved configuration",
+    rootPath: resolve(directory, "retry-configuration"),
+  };
+  const entry = await json(await post("/api/projects", body), 201);
+  const path = `/api/projects/${entry._id}`;
+  const missing = await upload(entry._id, "missing-ecosystem", [
+    ["dist/main.js", 'console.log("original")'],
+  ]);
+  assert.equal(missing.status, 400);
+  assert.match((await missing.json()).message, /Editar projeto/);
+  const failed = (await json(await request(`${path}/builds`))).items[0];
+  const configA =
+    'module.exports={apps:[{name:"retry-app",script:"./dist/main.js"}]};';
+  await json(
+    await request(path, {
+      method: "PUT",
+      body: JSON.stringify({ ...body, pm2ConfigContent: configA }),
+    }),
+  );
+  await json(await post(`${path}/builds/${failed._id}/deploy`, {}));
+  assert.equal(
+    await readFile(resolve(entry.rootPath, "ecosystem.config.js"), "utf8"),
+    configA,
+  );
+  await json(
+    await request(path, {
+      method: "PUT",
+      body: JSON.stringify({
+        ...body,
+        pm2ConfigContent: configA + "\n// new configuration",
+      }),
+    }),
+  );
+  failDeployment = true;
+  try {
+    assert.equal(
+      (
+        await upload(entry._id, "failed-pm2-config", [
+          ["dist/main.js", 'console.log("changed")'],
+        ])
+      ).status,
+      502,
+    );
+  } finally {
+    failDeployment = false;
+  }
+  assert.equal(
+    await readFile(resolve(entry.rootPath, "ecosystem.config.js"), "utf8"),
+    configA,
+  );
+  assert.match(
+    await readFile(resolve(entry.rootPath, "dist/main.js"), "utf8"),
+    /original/,
+  );
+});
+
+test("deletion previews identify processes by folder and keeping them leaves PM2 untouched", async () => {
+  const entry = await json(
+    await post("/api/projects", {
+      name: "Keep linked processes",
+      rootPath: resolve(directory, "keep-processes"),
+    }),
+    201,
+  );
+  const path = `/api/projects/${entry._id}`;
+  linkedRows = [
+    {
+      pm_id: 11,
+      name: "same-name",
+      pm2_env: {
+        status: "online",
+        pm_cwd: entry.rootPath,
+        pm_exec_path: resolve(entry.rootPath, "main.js"),
+      },
+    },
+    {
+      pm_id: 12,
+      name: "worker",
+      pm2_env: {
+        status: "online",
+        pm_cwd: directory,
+        pm_exec_path: resolve(entry.rootPath, "worker.js"),
+      },
+    },
+    {
+      pm_id: 13,
+      name: "same-name",
+      pm2_env: {
+        status: "online",
+        pm_cwd: entry.rootPath + "-other",
+        pm_exec_path: resolve(entry.rootPath + "-other", "main.js"),
+      },
+    },
+  ];
+  assert.equal((await fetch(origin + path + "/deletion-preview")).status, 401);
+  const preview = await json(await request(path + "/deletion-preview"));
+  assert.deepEqual(
+    preview.processes.map((process) => process.id),
+    [11, 12],
+  );
+  assert.equal(
+    preview.processes.some(
+      (process) => "cwd" in process || "script" in process,
+    ),
+    false,
+  );
+  assert.equal(stoppedProcesses.length, 0);
+  await json(
+    await request(path, {
+      method: "DELETE",
+      body: JSON.stringify({
+        stopProcesses: false,
+        processRevision: preview.revision,
+      }),
+    }),
+    204,
+  );
+  assert.equal(stoppedProcesses.length, 0);
+  assert.equal(linkedRows[0].pm2_env.status, "online");
+});
+
+test("optional process termination requires the confirmed revision and keeps the project on stop failure", async () => {
+  const entry = await json(
+    await post("/api/projects", {
+      name: "Stop linked processes",
+      rootPath: resolve(directory, "stop-processes"),
+    }),
+    201,
+  );
+  await writeFile(resolve(entry.rootPath, "keep.txt"), "application files");
+  const path = `/api/projects/${entry._id}`;
+  linkedRows = [
+    {
+      pm_id: 21,
+      name: "project-app",
+      pm2_env: {
+        status: "online",
+        pm_cwd: entry.rootPath,
+        pm_exec_path: resolve(entry.rootPath, "main.js"),
+      },
+    },
+    {
+      pm_id: 22,
+      name: "project-app",
+      pm2_env: {
+        status: "online",
+        pm_cwd: directory,
+        pm_exec_path: resolve(directory, "unrelated.js"),
+      },
+    },
+  ];
+  const preview = await json(await request(path + "/deletion-preview"));
+  assert.equal(
+    (
+      await request(path, {
+        method: "DELETE",
+        body: JSON.stringify({ stopProcesses: "true" }),
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request(path, {
+        method: "DELETE",
+        body: JSON.stringify({ stopProcesses: true }),
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request(path, {
+        method: "DELETE",
+        body: JSON.stringify({
+          stopProcesses: true,
+          processRevision: "outdated",
+        }),
+      })
+    ).status,
+    409,
+  );
+  linkedRows[0].pm2_env.pm_exec_path = resolve(entry.rootPath, "new-main.js");
+  assert.equal(
+    (
+      await request(path, {
+        method: "DELETE",
+        body: JSON.stringify({
+          stopProcesses: true,
+          processRevision: preview.revision,
+        }),
+      })
+    ).status,
+    409,
+  );
+  assert.equal(stoppedProcesses.length, 0);
+  const current = await json(await request(path + "/deletion-preview"));
+  stopFailure = true;
+  try {
+    assert.equal(
+      (
+        await request(path, {
+          method: "DELETE",
+          body: JSON.stringify({
+            stopProcesses: true,
+            processRevision: current.revision,
+          }),
+        })
+      ).status,
+      502,
+    );
+  } finally {
+    stopFailure = false;
+  }
+  assert.equal((await request(path)).status, 200);
+  assert.equal((await json(await request(path))).deleting, undefined);
+  await json(
+    await request(path, {
+      method: "DELETE",
+      body: JSON.stringify({
+        stopProcesses: true,
+        processRevision: current.revision,
+      }),
+    }),
+    204,
+  );
+  assert.deepEqual(stoppedProcesses, [21]);
+  assert.equal(linkedRows[0].pm2_env.status, "stopped");
+  assert.equal(linkedRows[1].pm2_env.status, "online");
+  assert.equal(
+    await readFile(resolve(entry.rootPath, "keep.txt"), "utf8"),
+    "application files",
   );
 });

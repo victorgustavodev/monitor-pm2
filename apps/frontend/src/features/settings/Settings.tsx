@@ -1,7 +1,9 @@
 import { t } from "../../i18n";
 import { RefreshCw, Globe, CircleUserRound } from "lucide-react";
-import { RetentionSettings } from './components/RetentionSettings';
-import { getLocale, setLocale, type Locale } from '../../i18n';
+import { RetentionSettings } from "./components/RetentionSettings";
+import { getLocale, setLocale, type Locale } from "../../i18n";
+import { useEffect, useState } from "react";
+import { Management } from "../management/Management";
 
 export function Settings({
   autoRefresh,
@@ -9,19 +11,80 @@ export function Settings({
   username,
   onBusyChange,
   onSessionExpired,
+  isAdmin,
 }: {
   autoRefresh: boolean;
   onAutoRefreshChange: (enabled: boolean) => void;
   username: string;
   onBusyChange: (busy: boolean) => void;
   onSessionExpired: () => void;
+  isAdmin: boolean;
 }) {
+  const [panel, setPanel] = useState<"general" | "users">("general");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    onBusyChange(busy);
+    return () => onBusyChange(false);
+  }, [busy, onBusyChange]);
+  if (panel === "users" && isAdmin)
+    return (
+      <div className="settings-content">
+        <button
+          className="project-back"
+          disabled={busy}
+          onClick={() => setPanel("general")}
+        >
+          {t("Voltar às configurações")}
+        </button>
+        <Management
+          panel="users"
+          onStarted={async () => {}}
+          onSessionExpired={onSessionExpired}
+          onBusyChange={setBusy}
+        />
+      </div>
+    );
   return (
     <div className="settings-content">
+      {isAdmin && (
+        <section className="settings-card">
+          <div className="settings-icon">
+            <CircleUserRound size={21} aria-hidden="true" />
+          </div>
+          <h2>{t("Usuários")}</h2>
+          <p>
+            {t(
+              "Gerencie os usuários e seus perfis de acesso. Disponível apenas para administradores.",
+            )}
+          </p>
+          <button
+            className="project-button secondary settings-users-button"
+            disabled={busy}
+            onClick={() => setPanel("users")}
+          >
+            {t("Acessar usuários")}
+          </button>
+        </section>
+      )}
       <section className="settings-card">
-        <div className="settings-icon"><Globe size={21} aria-hidden="true" /></div>
-        <div><h2>{t("Idioma")}</h2><p>{t("Escolha o idioma deste navegador.")}</p></div>
-        <label className="settings-field">{t("Idioma da interface")}<select value={getLocale()} onChange={(event) => setLocale(event.target.value as Locale)}><option value="pt-BR">Português (Brasil)</option><option value="en">English</option><option value="es">Español</option></select></label>
+        <div className="settings-icon">
+          <Globe size={21} aria-hidden="true" />
+        </div>
+        <div>
+          <h2>{t("Idioma")}</h2>
+          <p>{t("Escolha o idioma deste navegador.")}</p>
+        </div>
+        <label className="settings-field">
+          {t("Idioma da interface")}
+          <select
+            value={getLocale()}
+            onChange={(event) => setLocale(event.target.value as Locale)}
+          >
+            <option value="pt-BR">Português (Brasil)</option>
+            <option value="en">English</option>
+            <option value="es">Español</option>
+          </select>
+        </label>
       </section>
       <section
         className="settings-card"
@@ -33,13 +96,19 @@ export function Settings({
         <div>
           <h2 id="refresh-settings-title">{t("Atualização do painel")}</h2>
           <p>
-            {t("Escolha como acompanhar os indicadores e a lista de processos nesta sessão.")}</p>
+            {t(
+              "Escolha como acompanhar os indicadores e a lista de processos nesta sessão.",
+            )}
+          </p>
         </div>
         <label className="refresh-preference">
           <div>
             <strong>{t("Atualização ao vivo")}</strong>
             <span>
-              {t("Receber mudanças nas métricas e nos processos pela conexão contínua com o servidor.")}</span>
+              {t(
+                "Receber mudanças nas métricas e nos processos pela conexão contínua com o servidor.",
+              )}
+            </span>
           </div>
           <input
             type="checkbox"
@@ -48,7 +117,10 @@ export function Settings({
           />
         </label>
         <p className="settings-note">
-          {t("Você também pode atualizar os dados a qualquer momento pelo botão Atualizar.")}</p>
+          {t(
+            "Você também pode atualizar os dados a qualquer momento pelo botão Atualizar.",
+          )}
+        </p>
       </section>
       <section
         className="settings-card"
@@ -75,7 +147,10 @@ export function Settings({
           </div>
         </dl>
       </section>
-      <RetentionSettings onBusyChange={onBusyChange} onSessionExpired={onSessionExpired} />
+      <RetentionSettings
+        onBusyChange={setBusy}
+        onSessionExpired={onSessionExpired}
+      />
     </div>
   );
 }

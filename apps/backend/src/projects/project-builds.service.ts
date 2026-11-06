@@ -1,11 +1,15 @@
 import { createReadStream } from "node:fs";
 import { withArtifactAccess } from "../common/artifact-access";
+import { withProjectOperation as exclusive } from "./project-operations";
 
 export const createProjectBuild = async (
   ...args: Parameters<typeof createProjectBuildInternal>
 ) => {
-  try { return await withArtifactAccess(() => createProjectBuildInternal(...args)); }
-  finally { if (args[1]) await rm(args[1].path, { force: true }); }
+  try {
+    return await withArtifactAccess(() => createProjectBuildInternal(...args));
+  } finally {
+    if (args[1]) await rm(args[1].path, { force: true });
+  }
 };
 export const deployProjectBuild = (
   ...args: Parameters<typeof deployProjectBuildInternal>
@@ -19,7 +23,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { MongoServerError, ObjectId, type WithId } from "mongodb";
 import {
   projectBuilds,
@@ -44,23 +48,6 @@ import {
 } from "./project-deploy";
 
 export const uploadProjectBuild = createArchiveUpload(16 * 1024);
-const busyProjects = new Set<string>();
-
-async function exclusive<T>(id: ObjectId, action: () => Promise<T>) {
-  const key = id.toHexString();
-  if (busyProjects.has(key))
-    throw new HttpError(
-      409,
-      "Já existe um build em andamento neste projeto. Aguarde a conclusão.",
-    );
-  busyProjects.add(key);
-  try {
-    return await action();
-  } finally {
-    busyProjects.delete(key);
-  }
-}
-
 export async function getProjectBuild(project: ObjectId, raw: unknown) {
   const build = await projectBuilds.findOne({
     _id: projectId(raw),
@@ -126,8 +113,16 @@ async function deploy(
     resolve(folder, "source"),
     build.sourceRoot || "",
   );
-  const files = await scanBuild(source);
-  const configInBuild = files.includes(project.pm2ConfigPath);
+  let files = await scanBuild(source);
+  let configInBuild = files.includes(project.pm2ConfigPath);
+  if (!configInBuild && project.pm2ConfigContent) {
+    // Snapshot the project configuration once so old builds remain reproducible.
+    const config = await projectPath(source, project.pm2ConfigPath, true);
+    await mkdir(dirname(config), { recursive: true });
+    await writeFile(config, project.pm2ConfigContent, { flag: "wx" });
+    files = await scanBuild(source);
+    configInBuild = true;
+  }
   if (!configInBuild) {
     const config = await projectPath(
       project.rootPath,
@@ -137,7 +132,7 @@ async function deploy(
     if (!(await lstat(config).catch(() => null))?.isFile())
       throw new HttpError(
         400,
-        `Inclua ${project.pm2ConfigPath} no pacote ou na pasta do projeto.`,
+        `Configuração PM2 não encontrada. Salve a configuração em Editar projeto ou inclua ${project.pm2ConfigPath} no pacote ou na pasta do projeto.`,
       );
   }
   let previousFiles: string[] = [];

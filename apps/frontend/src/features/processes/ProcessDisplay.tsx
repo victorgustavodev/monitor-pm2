@@ -79,7 +79,9 @@ export function ProcessActions({
       {busy === process.id && (
         <span className="process-action-progress" role="status">
           <RefreshCw size={16} className="animate-spin" aria-hidden="true" />
-          <span className="sr-only">{t("Executando ação em")}{" "}{process.name}…</span>
+          <span className="sr-only">
+            {t("Executando ação em")} {process.name}…
+          </span>
         </span>
       )}
     </div>
@@ -160,7 +162,7 @@ export function ProcessPort({
           : null}
         {hasPort ? (
           <span className="font-mono tabular-nums">
-            {process.ports.join(', ')}
+            {process.ports.join(", ")}
           </span>
         ) : !withLabel ? (
           "—"

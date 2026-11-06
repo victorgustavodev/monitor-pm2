@@ -1,9 +1,7 @@
 import { t } from "../../i18n";
 import {
   LayoutDashboard,
-  Server,
   History,
-  Users,
   Package,
   Settings,
   LogOut,
@@ -13,26 +11,14 @@ import {
 import Logo from "../../assets/logo.png";
 
 export type DashboardView =
-  | "overview"
-  | "processes"
-  | "projects"
-  | "logs"
-  | "users"
-  | "builds"
-  | "settings";
+  "home" | "projects" | "logs" | "builds" | "settings";
 
 export const dashboardViews = [
   {
-    id: "overview",
-    label: "Visão geral",
+    id: "home",
+    label: "Home",
     description: "Acompanhe a saúde das aplicações e o consumo da sua VM.",
     icon: LayoutDashboard,
-  },
-  {
-    id: "processes",
-    label: "Processos",
-    description: "Monitore portas, recursos e operações de cada aplicação.",
-    icon: Server,
   },
   {
     id: "projects",
@@ -46,12 +32,6 @@ export const dashboardViews = [
     description:
       "Consulte a saída dos processos e as ações realizadas no painel.",
     icon: History,
-  },
-  {
-    id: "users",
-    label: "Usuários",
-    description: "Gerencie quem pode acessar e operar o monitor.",
-    icon: Users,
   },
   {
     id: "builds",
@@ -111,9 +91,7 @@ export function Sidebar({
           >
             <Icon size={19} strokeWidth={1.7} aria-hidden="true" />
             <span>{t(label)}</span>
-            {id === "processes" && (
-              <span className="sidebar-count">{count}</span>
-            )}
+            {id === "home" && <span className="sidebar-count">{count}</span>}
           </button>
         ))}
       </nav>

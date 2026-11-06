@@ -13,9 +13,14 @@ import { HttpError } from "../common/http-error";
 import { deployEcosystem } from "../pm2/pm2.service";
 import { withArtifactAccess } from "../common/artifact-access";
 
-export const saveBuild = async (...args: Parameters<typeof saveBuildInternal>) => {
-  try { return await withArtifactAccess(() => saveBuildInternal(...args)); }
-  finally { if (args[0]) await rm(args[0].path, { force: true }); }
+export const saveBuild = async (
+  ...args: Parameters<typeof saveBuildInternal>
+) => {
+  try {
+    return await withArtifactAccess(() => saveBuildInternal(...args));
+  } finally {
+    if (args[0]) await rm(args[0].path, { force: true });
+  }
 };
 export const startVersion = (
   ...args: Parameters<typeof startVersionInternal>

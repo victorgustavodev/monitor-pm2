@@ -22,7 +22,9 @@ export async function api<T>(url: string, options?: RequestInit): Promise<T> {
     response = await fetch(url, { ...options, headers });
   } catch {
     throw new ApiError(
-      t("Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente."),
+      t(
+        "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.",
+      ),
       0,
     );
   }
@@ -35,13 +37,23 @@ export async function api<T>(url: string, options?: RequestInit): Promise<T> {
           : t("Sua sessão expirou. Entre novamente."),
       403: t("Você não tem permissão para realizar esta ação."),
       413: t("O arquivo excede o limite de envio do servidor."),
-      429: t("Muitas tentativas de acesso. Aguarde alguns minutos antes de tentar novamente."),
+      429: t(
+        "Muitas tentativas de acesso. Aguarde alguns minutos antes de tentar novamente.",
+      ),
       502:
         url === "/api/processes"
-          ? t("Não foi possível carregar os processos do PM2. Verifique a conexão do monitor com o PM2 na VM.")
-          : t("O servidor está indisponível no momento. Verifique o serviço e o encaminhamento do IIS."),
-      503: t("O serviço está temporariamente indisponível. Tente novamente em instantes."),
-      504: t("O servidor demorou para responder. Tente novamente em instantes."),
+          ? t(
+              "Não foi possível carregar os processos do PM2. Verifique a conexão do monitor com o PM2 na VM.",
+            )
+          : t(
+              "O servidor está indisponível no momento. Verifique o serviço e o encaminhamento do IIS.",
+            ),
+      503: t(
+        "O serviço está temporariamente indisponível. Tente novamente em instantes.",
+      ),
+      504: t(
+        "O servidor demorou para responder. Tente novamente em instantes.",
+      ),
     };
     const detail = typeof body?.message === "string" ? body.message : "";
     throw new ApiError(

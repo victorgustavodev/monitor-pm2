@@ -7,8 +7,9 @@ import { HttpError } from "../common/http-error";
 import { parsePm2Output } from "./pm2-output";
 import { inspectProcessPorts, type ProcessPorts } from "./process-ports";
 import { withArtifactAccess } from "../common/artifact-access";
-import { homedir } from 'node:os';
-import { collectArtifactPaths, savedArtifactPaths } from './artifact-paths';
+import { homedir } from "node:os";
+import { collectArtifactPaths, savedArtifactPaths } from "./artifact-paths";
+import { selectProjectProcesses } from "./project-processes";
 
 export const startEcosystem = (
   ...args: Parameters<typeof startEcosystemInternal>
@@ -206,8 +207,49 @@ async function assertExists(id: number) {
 
 export async function processArtifactPaths(): Promise<string[]> {
   const rows = await processRows();
-  return [...collectArtifactPaths(rows.map((row) => row.pm2_env)),
-    ...await savedArtifactPaths(env.pm2Home || resolve(homedir(), '.pm2'))];
+  return [
+    ...collectArtifactPaths(rows.map((row) => row.pm2_env)),
+    ...(await savedArtifactPaths(env.pm2Home || resolve(homedir(), ".pm2"))),
+  ];
+}
+
+export async function getProjectProcesses(root: string) {
+  const rows = await processRows();
+  try {
+    collectArtifactPaths(rows.map((row) => row.pm2_env));
+  } catch {
+    throw new HttpError(
+      502,
+      "Não foi possível identificar com segurança os processos vinculados ao projeto.",
+    );
+  }
+  return selectProjectProcesses(rows, root);
+}
+
+export async function stopProjectProcesses(root: string, revision: string) {
+  return withArtifactAccess(async () => {
+    const snapshot = await getProjectProcesses(root);
+    if (snapshot.revision !== revision)
+      throw new HttpError(
+        409,
+        "Os processos vinculados mudaram. Abra a confirmação de exclusão novamente.",
+      );
+    let stopped = 0;
+    try {
+      for (const process of snapshot.processes) {
+        // Recheck identities before each action; never stop an ID that changed ownership.
+        if ((await getProjectProcesses(root)).revision !== revision)
+          throw new HttpError(
+            409,
+            "Os processos vinculados mudaram. Abra a confirmação de exclusão novamente.",
+          );
+        await run(["stop", String(process.id)]);
+        stopped++;
+      }
+    } finally {
+      if (stopped) await run(["save", "--force"]);
+    }
+  });
 }
 
 async function processActionInternal(

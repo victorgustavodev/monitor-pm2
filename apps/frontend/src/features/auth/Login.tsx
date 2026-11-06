@@ -53,12 +53,15 @@ export function Login({
             id="login-title"
             className="text-2xl font-semibold tracking-tight text-heading"
           >
-            {t("Acesse o painel")}</h2>
+            {t("Acesse o painel")}
+          </h2>
           <p className="mt-2 text-sm leading-6 text-muted">
-            {t("Realizar login para acessar o monitoramento de processos PM2.")}</p>
+            {t("Realizar login para acessar o monitoramento de processos PM2.")}
+          </p>
           <form onSubmit={submit} className="mt-8 space-y-4">
             <label className="block text-sm font-medium text-content">
-              {t("Usuário")}<input
+              {t("Usuário")}
+              <input
                 name="username"
                 autoComplete="username"
                 placeholder={t("Digite seu usuário")}
@@ -71,7 +74,8 @@ export function Login({
                 htmlFor="login-password"
                 className="block text-sm font-medium text-content"
               >
-                {t("Senha")}</label>
+                {t("Senha")}
+              </label>
               <div className="relative mt-2">
                 <input
                   id="login-password"
@@ -85,7 +89,9 @@ export function Login({
                 <button
                   type="button"
                   onClick={() => setShowPassword((visible) => !visible)}
-                  aria-label={showPassword ? t("Ocultar senha") : t("Mostrar senha")}
+                  aria-label={
+                    showPassword ? t("Ocultar senha") : t("Mostrar senha")
+                  }
                   aria-pressed={showPassword}
                   aria-controls="login-password"
                   className="login-password-toggle"
@@ -105,7 +111,8 @@ export function Login({
                 className="rounded-lg border border-danger-line bg-danger-surface px-4 py-3 text-sm text-danger"
               >
                 <p className="font-semibold">
-                  {t("Não foi possível acessar o painel")}</p>
+                  {t("Não foi possível acessar o painel")}
+                </p>
                 <p className="mt-1 break-words leading-5">{visibleError}</p>
               </div>
             )}

@@ -85,7 +85,11 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(rpc)}; conf.DAEMON_PUB_PORT=${JSON.stringi
         );
         configs.push(config);
       }
-      const { deployEcosystem } = require(
+      const {
+        deployEcosystem,
+        getProjectProcesses,
+        stopProjectProcesses,
+      } = require(
         process.env.TEST_BACKEND_SOURCE === "true"
           ? "../src/pm2/pm2.service.ts"
           : "../dist/pm2/pm2.service",
@@ -130,6 +134,22 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(rpc)}; conf.DAEMON_PUB_PORT=${JSON.stringi
       assert.match(
         await readFile(resolve(pm2Home, "dump.pm2"), "utf8"),
         /isolated-build/,
+      );
+      const preview = await getProjectProcesses(resolve(directory, "v1"));
+      assert.equal(preview.processes.length, 1);
+      assert.equal(preview.processes[0].name, "isolated-build");
+      await assert.rejects(
+        stopProjectProcesses(resolve(directory, "v1"), "outdated"),
+        (error) => error.status === 409,
+      );
+      await stopProjectProcesses(resolve(directory, "v1"), preview.revision);
+      const stopped = parsePm2Output((await cli(["jlist"])).stdout);
+      assert.equal(stopped.length, 1, "Stopping keeps the process registered");
+      assert.equal(stopped[0].pm2_env.status, "stopped");
+      assert.equal(
+        JSON.parse(await readFile(resolve(pm2Home, "dump.pm2"), "utf8"))[0]
+          .status,
+        "stopped",
       );
     } finally {
       await cli(["kill"]).catch(() => {});

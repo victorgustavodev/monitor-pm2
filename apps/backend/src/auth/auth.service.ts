@@ -26,7 +26,6 @@ export function createSession(username: string): string {
   const payload = Buffer.from(
     JSON.stringify({
       sub: username,
-      role: "admin",
       exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS,
     }),
   ).toString("base64url");
@@ -57,7 +56,6 @@ function verifySession(
       Buffer.from(payload, "base64url").toString("utf8"),
     ) as { exp?: number; role?: string; sub?: string };
     if (
-      claims.role === "admin" &&
       typeof claims.sub === "string" &&
       typeof claims.exp === "number" &&
       claims.exp > Date.now() / 1000
@@ -82,16 +80,27 @@ export async function authenticate(
   }
   if (!token) return next(new HttpError(401, "Sessão não encontrada."));
   const session = verifySession(token);
-  if (
-    !session ||
-    !(await users.findOne(
-      { username: session.username },
-      { projection: { _id: 1 } },
-    ))
-  )
+  const user = session
+    ? await users.findOne(
+        { username: session.username },
+        { projection: { _id: 1, role: 1 } },
+      )
+    : null;
+  if (!session || !user)
     return next(new HttpError(401, "Sessão inválida ou expirada."));
   response.locals.username = session.username;
+  response.locals.role = user.role === "admin" ? "admin" : "user";
   response.locals.sessionExpiresAt = session.expiresAt;
+  next();
+}
+
+export function requireAdmin(
+  _request: Request,
+  response: Response,
+  next: NextFunction,
+) {
+  if (response.locals.role !== "admin")
+    return next(new HttpError(403, "Acesso restrito a administradores."));
   next();
 }
 

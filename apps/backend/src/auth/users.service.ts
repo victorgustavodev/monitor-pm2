@@ -17,7 +17,13 @@ export function normalizeUsername(value: unknown): string {
   return value.trim().toLowerCase();
 }
 
-export async function createUser(username: unknown, password: unknown) {
+export async function createUser(
+  username: unknown,
+  password: unknown,
+  role: unknown = "user",
+) {
+  if (role !== "admin" && role !== "user")
+    throw new HttpError(400, "Perfil de usuário inválido.");
   const normalized = normalizeUsername(username);
   if (
     typeof password !== "string" ||
@@ -27,6 +33,7 @@ export async function createUser(username: unknown, password: unknown) {
     throw new HttpError(400, "A senha deve ter de 12 a 256 caracteres.");
   }
   const user = {
+    role: role as "admin" | "user",
     username: normalized,
     passwordHash: await hashPassword(password),
     createdAt: new Date(),
@@ -42,11 +49,37 @@ export async function createUser(username: unknown, password: unknown) {
 }
 
 export async function bootstrapUser() {
-  if (await users.findOne({})) return;
+  if (await users.findOne({})) {
+    // One-time migration: legacy accounts did not have roles.
+    if (!(await users.findOne({ role: "admin" }))) {
+      const configured = env.adminUsername
+        ? await users.findOne({
+            username: env.adminUsername.toLowerCase(),
+            role: { $exists: false },
+          })
+        : null;
+      const admin =
+        configured ||
+        (await users.findOne(
+          { role: { $exists: false } },
+          { sort: { createdAt: 1, _id: 1 } },
+        ));
+      if (admin)
+        await users.updateOne(
+          { _id: admin._id, role: { $exists: false } },
+          { $set: { role: "admin" } },
+        );
+    }
+    await users.updateMany(
+      { role: { $exists: false } },
+      { $set: { role: "user" } },
+    );
+    return;
+  }
   if (!env.adminUsername || !env.adminPassword) {
     throw new Error(
       "Banco sem usuários. Configure ADMIN_USERNAME e ADMIN_PASSWORD para criar o primeiro usuário.",
     );
   }
-  await createUser(env.adminUsername, env.adminPassword);
+  await createUser(env.adminUsername, env.adminPassword, "admin");
 }

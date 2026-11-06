@@ -88,6 +88,9 @@ Tratamento visual e acessibilidade ficam nos componentes; tradução de falhas t
 
 ### Contratos implementados de configurações e portas
 
+- `GET /api/auth/me` inclui `role: "admin" | "user"`, consultado do banco. `GET /api/users` e `POST /api/users` exigem `admin` no backend; no frontend, o acesso fica em Configurações. A criação aceita `role` opcional, com padrão `user`.
+- `GET /api/projects/:id/deletion-preview` retorna os processos vinculados à pasta atual e uma revisão. A confirmação de exclusão envia `stopProcesses` e `processRevision`; a opção de parar começa desmarcada. Uma revisão desatualizada retorna 409 e exige nova confirmação. Parar conserva a entrada no PM2.
+
 - `GET /api/settings/retention` retorna `enabled`, `retentionDays`, `intervalHours`, `nextRunAt` e, após execução, `lastRunAt`, `lastDeleted` e eventual `lastError`.
 - `PUT /api/settings/retention` recebe `{ enabled: boolean, retentionDays: number, intervalHours: number }`. Exige sessão; retenção de 1–3650 dias, intervalo inteiro de 1–8760 horas. A UI bloqueia navegação enquanto salva e trata 401 pelo fluxo de sessão existente.
 - A resposta de processos (consulta e SSE) inclui `ports` e `portSource`, usados por `ProcessPort` para exibir os números das portas e indicar sua origem. Não realiza descoberta de IP/DNS nem expõe variáveis de ambiente PM2.

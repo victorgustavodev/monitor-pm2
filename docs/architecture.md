@@ -90,7 +90,7 @@ O backend é responsável por validar e executar operações PM2. O frontend mos
 
 ## Navegação do cockpit
 
-O painel autenticado possui sidebar azul com logo branca e sete áreas: **visão geral, processos, projetos, logs, usuários, builds e configurações**. `components/layout/Sidebar.tsx` centraliza destinos e `app/App.tsx` controla a área ativa e o projeto selecionado.
+O painel autenticado possui sidebar azul com logo branca e cinco áreas: **Home, projetos, logs, builds e configurações**. `components/layout/Sidebar.tsx` centraliza destinos e `app/App.tsx` controla a área ativa, o projeto selecionado e o perfil recebido da sessão. Usuários é uma tela interna de Configurações, acessível apenas a administradores.
 
 **Antes de editar**, localize os arquivos reais e respeite os caminhos efetivos. Não mova a Sidebar ou o App apenas para fazer o código coincidir com este texto. Se existir um componente de navegação específico em `components/layout/`, ele pode permanecer ali até uma refatoração solicitada e planejada.
 
@@ -100,10 +100,12 @@ O painel autenticado possui sidebar azul com logo branca e sete áreas: **visão
 - A navegação oferece o atalho acessível **“Ir para o conteúdo”**.
 - Cadastros/envios em andamento podem impedir a troca de área; essa regra funcional não deve ser perdida em refatorações.
 
-## Dashboard e Processos
+## Home
 
-- A **visão geral** exibe quatro indicadores em duas colunas e resumo de até seis processos.
-- A área **Processos** contém tabela completa, portas e ações.
+O título da Home cumprimenta o usuário conectado com “Olá, nome”, respeitando o idioma da interface.
+
+- `features/home/Home.tsx` exibe quatro indicadores em uma linha no desktop, duas colunas até 1200 px e uma até 640 px.
+- A Home também compõe `Applications`, com a tabela completa, portas, busca, logs e ações de processos.
 - O seletor **Lista / Cards** muda somente a apresentação; não duplica fontes de dados nem altera busca ou filtros.
 - A lista é o modo inicial. O modo escolhido é persistido em `localStorage` usando `monitor-pm2:applications-layout`.
 - Os cards formam duas colunas no desktop, uma em telas pequenas e incluem o atalho **Novo processo**.
@@ -111,9 +113,11 @@ O painel autenticado possui sidebar azul com logo branca e sete áreas: **visão
 
 ## Projetos e builds
 
-`features/projects/Projects.tsx` compõe cadastro e detalhe do projeto; `Builds.tsx` reúne o histórico global e o acesso aos uploads avulsos existentes. Componentes exclusivos (`BuildForm`, `BuildHistory`, `ProjectFiles`) ficam em `features/projects/components/`; os tipos ficam em `features/projects/types.ts`. As chamadas reutilizam o cliente autenticado existente em `services/api.ts`. O histórico é compartilhado pelas duas telas, sem promovê-lo a componente global.
+`features/projects/Projects.tsx` compõe cadastro e detalhe do projeto; `Builds.tsx` reúne o histórico global e o acesso aos uploads avulsos existentes. Componentes exclusivos (`BuildForm`, `BuildHistory`, `ProjectFiles`, `ProjectSettings`) ficam em `features/projects/components/`; os tipos ficam em `features/projects/types.ts`. `ProjectSettings` contém edição e confirmação de exclusão pelo nome; a tela coordena chamadas e bloqueio de navegação. As chamadas reutilizam o cliente autenticado existente em `services/api.ts`. O histórico é compartilhado pelas duas telas, sem promovê-lo a componente global.
 
 Arquivos são lidos pela API a partir da pasta do projeto na VM. Publicação, validação de caminhos e execução PM2 pertencem ao backend. Cadastros, uploads e republicações bloqueiam ações conflitantes e a navegação até concluir. Consulte [Projetos](projects.md) para modelo de dados e contratos.
+
+`Pm2ConfigurationField` compartilha entre cadastro e edição o conteúdo opcional do ecosystem (`pm2ConfigContent`). O backend valida sintaxe sem executá-lo no salvamento e materializa uma cópia no armazenamento do build quando falta o arquivo no pacote, usando o mesmo fluxo de publicação e recuperação dos demais arquivos.
 
 ## Evolução incremental
 
@@ -121,7 +125,9 @@ Arquivos são lidos pela API a partir da pasta do projeto na VM. Publicação, v
 
 `features/settings/components/RetentionSettings.tsx` edita a política global de retenção pela API autenticada. O backend em `src/settings/` agenda a remoção de artefatos, compartilha um bloqueio com operações de publicação e preserva referências atuais e salvas do PM2. A configuração fica na coleção MongoDB `settings`, documento `retention`.
 
-`src/i18n/` contém o catálogo e a preferência local de idioma; consulte [i18n.md](i18n.md). `ProcessPort` é reutilizado na visão geral, lista e cards e exibe os números das portas em texto, mantendo a distinção entre portas em escuta e configuradas. A visão geral usa botões para navegar até os processos.
+`src/i18n/` contém o catálogo e a preferência local de idioma; consulte [i18n.md](i18n.md). `ProcessPort` é reutilizado na lista e nos cards da Home e exibe os números das portas em texto, mantendo a distinção entre portas em escuta e configuradas.
+
+`Settings` contém a navegação interna para `Management panel="users"` quando `isAdmin` é verdadeiro. O backend valida o papel armazenado no MongoDB em todas as requisições e protege GET/POST `/api/users` com `requireAdmin`. A visibilidade do frontend não substitui essa autorização.
 
 1. Identifique o fluxo funcional que será alterado.
 2. Preserve o contrato público e os comportamentos atuais.

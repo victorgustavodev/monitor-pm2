@@ -63,7 +63,8 @@ export function ProjectFiles({
         >
           <button onClick={() => setPath("")}>
             <FolderOpen size={16} />
-            {t("Raiz")}</button>
+            {t("Raiz")}
+          </button>
           {parts.map((part, index) => (
             <span key={index}>
               <ChevronRight size={14} />
@@ -82,7 +83,8 @@ export function ProjectFiles({
           aria-label={t("Atualizar arquivos")}
         >
           <RefreshCw size={15} />
-          {t("Atualizar")}</button>
+          {t("Atualizar")}
+        </button>
       </div>
       {error && (
         <p role="alert" className="project-message error">
@@ -91,7 +93,8 @@ export function ProjectFiles({
       )}
       {loading && (
         <p className="project-empty" role="status">
-          {t("Carregando arquivos…")}</p>
+          {t("Carregando arquivos…")}
+        </p>
       )}
       {view?.type === "directory" && (
         <>
@@ -127,7 +130,9 @@ export function ProjectFiles({
                         onClick={() => setPath(entry.path)}
                         title={
                           entry.type === "blocked"
-                            ? t("Links e arquivos especiais não podem ser acessados.")
+                            ? t(
+                                "Links e arquivos especiais não podem ser acessados.",
+                              )
                             : entry.name
                         }
                       >
@@ -156,12 +161,17 @@ export function ProjectFiles({
             <div className="project-empty">
               <FolderOpen size={32} />
               <strong>{t("Esta pasta está vazia")}</strong>
-              <p>{t("Os arquivos aparecerão aqui após a publicação de um build.")}</p>
+              <p>
+                {t(
+                  "Os arquivos aparecerão aqui após a publicação de um build.",
+                )}
+              </p>
             </div>
           )}
           {view.truncated && (
             <p className="project-footnote">
-              {t("Exibindo as primeiras 2.000 entradas desta pasta.")}</p>
+              {t("Exibindo as primeiras 2.000 entradas desta pasta.")}
+            </p>
           )}
         </>
       )}
@@ -176,19 +186,29 @@ export function ProjectFiles({
               href={`/api/projects/${projectId}/files/download?path=${encodeURIComponent(path)}`}
             >
               <Download size={15} />
-              {t("Baixar arquivo")}</a>
+              {t("Baixar arquivo")}
+            </a>
           </div>
           {view.binary ? (
             <p className="project-empty">
-              {t("Prévia indisponível para arquivos binários. Use o download para abrir este arquivo.")}</p>
+              {t(
+                "Prévia indisponível para arquivos binários. Use o download para abrir este arquivo.",
+              )}
+            </p>
           ) : (
-            <pre tabIndex={0} aria-label={t("Conteúdo de {0}", { 0: parts.at(-1) })}>
-              <code>{view.content || t('(arquivo vazio)')}</code>
+            <pre
+              tabIndex={0}
+              aria-label={t("Conteúdo de {0}", { 0: parts.at(-1) })}
+            >
+              <code>{view.content || t("(arquivo vazio)")}</code>
             </pre>
           )}
           {view.truncated && (
             <p className="project-footnote">
-              {t("Prévia limitada a 256 KB. O download contém o arquivo completo.")}</p>
+              {t(
+                "Prévia limitada a 256 KB. O download contém o arquivo completo.",
+              )}
+            </p>
           )}
         </div>
       )}

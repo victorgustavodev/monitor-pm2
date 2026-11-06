@@ -31,7 +31,8 @@ export async function runRetention(now = new Date()) {
     return false;
   return tryArtifactCleanup(async () => {
     settings = await getRetentionSettings();
-    if (!settings.enabled || !settings.nextRunAt || settings.nextRunAt > now) return;
+    if (!settings.enabled || !settings.nextRunAt || settings.nextRunAt > now)
+      return;
     let deleted = 0;
     let error: string | undefined;
     try {
@@ -71,6 +72,7 @@ export async function runRetention(now = new Date()) {
         // Preserve manifests for active builds and journals required for recovery.
         if (
           !project ||
+          project.deleting ||
           project.deployment ||
           project.activeBuildId?.equals(build._id)
         )

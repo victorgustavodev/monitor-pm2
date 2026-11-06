@@ -1,55 +1,199 @@
 import { t } from "../../../i18n";
-import { useEffect, useState, type FormEvent } from 'react';
-import { RefreshCw } from 'lucide-react';
-import { api, ApiError } from '../../../services/api';
-import { dateLocale } from '../../../i18n';
-type Retention = { enabled: boolean; retentionDays: number; intervalHours: number; nextRunAt: string | null; lastRunAt?: string; lastDeleted?: number; lastError?: string };
+import { useEffect, useState, type FormEvent } from "react";
+import { RefreshCw } from "lucide-react";
+import { api, ApiError } from "../../../services/api";
+import { dateLocale } from "../../../i18n";
+type Retention = {
+  enabled: boolean;
+  retentionDays: number;
+  intervalHours: number;
+  nextRunAt: string | null;
+  lastRunAt?: string;
+  lastDeleted?: number;
+  lastError?: string;
+};
 
-export function RetentionSettings({ onBusyChange, onSessionExpired }: { onBusyChange: (busy: boolean) => void; onSessionExpired: () => void }) {
+export function RetentionSettings({
+  onBusyChange,
+  onSessionExpired,
+}: {
+  onBusyChange: (busy: boolean) => void;
+  onSessionExpired: () => void;
+}) {
   const [retention, setRetention] = useState<Retention | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    setError('');
-    void api<Retention>('/api/settings/retention', { signal: controller.signal }).then((value) => { if (!controller.signal.aborted) setRetention(value); }).catch((reason: unknown) => {
-      if (controller.signal.aborted) return;
-      if (reason instanceof ApiError && reason.status === 401) onSessionExpired();
-      setError(reason instanceof Error ? reason.message : t("Não foi possível carregar as configurações."));
-    });
+    setError("");
+    void api<Retention>("/api/settings/retention", {
+      signal: controller.signal,
+    })
+      .then((value) => {
+        if (!controller.signal.aborted) setRetention(value);
+      })
+      .catch((reason: unknown) => {
+        if (controller.signal.aborted) return;
+        if (reason instanceof ApiError && reason.status === 401)
+          onSessionExpired();
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : t("Não foi possível carregar as configurações."),
+        );
+      });
     return () => controller.abort();
   }, [onSessionExpired, reload]);
-  useEffect(() => { onBusyChange(busy); return () => onBusyChange(false); }, [busy, onBusyChange]);
+  useEffect(() => {
+    onBusyChange(busy);
+    return () => onBusyChange(false);
+  }, [busy, onBusyChange]);
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!retention || busy) return;
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true);
+    setError("");
+    setNotice("");
     try {
-      setRetention(await api<Retention>('/api/settings/retention', { method: 'PUT', body: JSON.stringify({ enabled: retention.enabled, retentionDays: retention.retentionDays, intervalHours: retention.intervalHours }) }));
+      setRetention(
+        await api<Retention>("/api/settings/retention", {
+          method: "PUT",
+          body: JSON.stringify({
+            enabled: retention.enabled,
+            retentionDays: retention.retentionDays,
+            intervalHours: retention.intervalHours,
+          }),
+        }),
+      );
       setNotice(t("Configurações salvas."));
     } catch (reason) {
-      if (reason instanceof ApiError && reason.status === 401) onSessionExpired();
-      setError(reason instanceof Error ? reason.message : t("Não foi possível salvar as configurações."));
-    } finally { setBusy(false); }
+      if (reason instanceof ApiError && reason.status === 401)
+        onSessionExpired();
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : t("Não foi possível salvar as configurações."),
+      );
+    } finally {
+      setBusy(false);
+    }
   }
-  return <section className="settings-card">
-    <div className="settings-icon"><RefreshCw size={21} aria-hidden="true" /></div>
-    <div><h2>{t("Limpeza automática de versões")}</h2><p>{t("Remova pacotes e históricos antigos para liberar espaço na VM.")}</p></div>
-    {error && <p role="alert" className="project-message error">{error}</p>}
-    {notice && <p role="status" className="project-message success">{notice}</p>}
-    {!retention ? <button className="project-button secondary" onClick={() => setReload((value) => value + 1)}>{t("Carregar configurações")}</button> : <form onSubmit={save} className="retention-form">
-      <label className="refresh-preference"><div><strong>{t("Habilitar limpeza automática")}</strong><span>{t("Esta configuração vale para todos os usuários do monitor.")}</span></div><input type="checkbox" checked={retention.enabled} disabled={busy} onChange={(event) => setRetention({ ...retention, enabled: event.target.checked })} /></label>
-      <div className="retention-fields">
-        <label className="settings-field">{t("Manter versões por (dias)")}<input name="retentionDays" type="number" min={1} max={3650} step={1} required disabled={busy || !retention.enabled} value={retention.retentionDays} onChange={(event) => setRetention({ ...retention, retentionDays: Number(event.target.value) })} /></label>
-        <label className="settings-field">{t("Executar limpeza a cada (horas)")}<input name="intervalHours" type="number" min={1} max={8760} step={1} required disabled={busy || !retention.enabled} value={retention.intervalHours} onChange={(event) => setRetention({ ...retention, intervalHours: Number(event.target.value) })} /></label>
+  return (
+    <section className="settings-card">
+      <div className="settings-icon">
+        <RefreshCw size={21} aria-hidden="true" />
       </div>
-      <p className="settings-note">{t("A limpeza exclui permanentemente versões antigas e seus arquivos. Builds ativos, publicações em andamento e arquivos usados pelo PM2 são preservados. A pasta principal dos projetos não é apagada.")}</p>
-      {retention.nextRunAt && <p className="settings-note">{t("Próxima limpeza:")}{" "}{new Date(retention.nextRunAt).toLocaleString(dateLocale())}</p>}
-      {retention.lastRunAt && <p className="settings-note">{t("Última limpeza:")}{" "}{new Date(retention.lastRunAt).toLocaleString(dateLocale())} · {retention.lastDeleted ?? 0}  {t("versões removidas")}</p>}
-      {retention.lastError && <p role="status" className="project-message error">{retention.lastError}</p>}
-      <button className="project-button" disabled={busy}>{busy ? t("Salvando…") : t("Salvar configurações")}</button>
-    </form>}
-  </section>;
+      <div>
+        <h2>{t("Limpeza automática de versões")}</h2>
+        <p>
+          {t("Remova pacotes e históricos antigos para liberar espaço na VM.")}
+        </p>
+      </div>
+      {error && (
+        <p role="alert" className="project-message error">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="project-message success">
+          {notice}
+        </p>
+      )}
+      {!retention ? (
+        <button
+          className="project-button secondary"
+          onClick={() => setReload((value) => value + 1)}
+        >
+          {t("Carregar configurações")}
+        </button>
+      ) : (
+        <form onSubmit={save} className="retention-form">
+          <label className="refresh-preference">
+            <div>
+              <strong>{t("Habilitar limpeza automática")}</strong>
+              <span>
+                {t("Esta configuração vale para todos os usuários do monitor.")}
+              </span>
+            </div>
+            <input
+              type="checkbox"
+              checked={retention.enabled}
+              disabled={busy}
+              onChange={(event) =>
+                setRetention({ ...retention, enabled: event.target.checked })
+              }
+            />
+          </label>
+          <div className="retention-fields">
+            <label className="settings-field">
+              {t("Manter versões por (dias)")}
+              <input
+                name="retentionDays"
+                type="number"
+                min={1}
+                max={3650}
+                step={1}
+                required
+                disabled={busy || !retention.enabled}
+                value={retention.retentionDays}
+                onChange={(event) =>
+                  setRetention({
+                    ...retention,
+                    retentionDays: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="settings-field">
+              {t("Executar limpeza a cada (horas)")}
+              <input
+                name="intervalHours"
+                type="number"
+                min={1}
+                max={8760}
+                step={1}
+                required
+                disabled={busy || !retention.enabled}
+                value={retention.intervalHours}
+                onChange={(event) =>
+                  setRetention({
+                    ...retention,
+                    intervalHours: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+          </div>
+          <p className="settings-note">
+            {t(
+              "A limpeza exclui permanentemente versões antigas e seus arquivos. Builds ativos, publicações em andamento e arquivos usados pelo PM2 são preservados. A pasta principal dos projetos não é apagada.",
+            )}
+          </p>
+          {retention.nextRunAt && (
+            <p className="settings-note">
+              {t("Próxima limpeza:")}{" "}
+              {new Date(retention.nextRunAt).toLocaleString(dateLocale())}
+            </p>
+          )}
+          {retention.lastRunAt && (
+            <p className="settings-note">
+              {t("Última limpeza:")}{" "}
+              {new Date(retention.lastRunAt).toLocaleString(dateLocale())} ·{" "}
+              {retention.lastDeleted ?? 0} {t("versões removidas")}
+            </p>
+          )}
+          {retention.lastError && (
+            <p role="status" className="project-message error">
+              {retention.lastError}
+            </p>
+          )}
+          <button className="project-button" disabled={busy}>
+            {busy ? t("Salvando…") : t("Salvar configurações")}
+          </button>
+        </form>
+      )}
+    </section>
+  );
 }

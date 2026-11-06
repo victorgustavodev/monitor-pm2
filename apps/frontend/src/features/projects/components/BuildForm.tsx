@@ -25,13 +25,18 @@ export function BuildForm({
     <section className="project-form-card" aria-labelledby="new-build-title">
       <div className="project-section-heading">
         <div>
-          <h2 id="new-build-title">{t("Novo build de")}{" "}{project.name}</h2>
-          <p>{t("Envie o pacote pronto e registre as alterações desta versão.")}</p>
+          <h2 id="new-build-title">
+            {t("Novo build de")} {project.name}
+          </h2>
+          <p>
+            {t("Envie o pacote pronto e registre as alterações desta versão.")}
+          </p>
         </div>
       </div>
       <form className="project-form" onSubmit={submit}>
         <label>
-          {t("Nome do build")}<input
+          {t("Nome do build")}
+          <input
             name="name"
             defaultValue={suggested}
             required
@@ -42,19 +47,23 @@ export function BuildForm({
           />
         </label>
         <label>
-          {t("O que mudou neste build?")}<textarea
+          {t("O que mudou neste build?")}
+          <textarea
             name="comments"
             required
             maxLength={4000}
             rows={3}
-            placeholder={t("Descreva correções, melhorias e mudanças desta versão.")}
+            placeholder={t(
+              "Descreva correções, melhorias e mudanças desta versão.",
+            )}
             disabled={busy}
           />
         </label>
         <label className="project-upload">
           <span>
             <Upload size={20} />
-            {t("Pacote do build")}</span>
+            {t("Pacote do build")}
+          </span>
           <input
             name="build"
             type="file"
@@ -71,7 +80,20 @@ export function BuildForm({
         </label>
         <p className="project-form-note">
           {t("Ao publicar, os arquivos serão aplicados em")}{" "}
-          <code>{project.rootPath}</code> {t("e a aplicação será iniciada ou atualizada com")}{" "}<code>{project.pm2ConfigPath}</code>{t(". Inclua as dependências necessárias no pacote.")}</p>
+          <code>{project.rootPath}</code>{" "}
+          {t("e a aplicação será iniciada ou atualizada com")}{" "}
+          <code>{project.pm2ConfigPath}</code>
+          {t(". Inclua as dependências necessárias no pacote.")}
+        </p>
+        <p className="project-form-note">
+          {project.pm2ConfigContent
+            ? t(
+                "O ZIP pode conter somente os arquivos da aplicação. Se não houver ecosystem, a configuração salva no projeto será copiada para este build.",
+              )
+            : t(
+                "Se o ZIP não incluir o ecosystem, salve a configuração em Editar projeto ou mantenha o arquivo na pasta da VM.",
+              )}
+        </p>
         <div className="project-form-actions">
           <button
             type="button"
@@ -79,7 +101,8 @@ export function BuildForm({
             onClick={onCancel}
             disabled={busy}
           >
-            {t("Cancelar")}</button>
+            {t("Cancelar")}
+          </button>
           <button className="project-button" disabled={busy}>
             <Upload size={16} />
             {busy ? t("Extraindo e publicando…") : t("Enviar e publicar")}

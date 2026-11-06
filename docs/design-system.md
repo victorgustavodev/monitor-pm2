@@ -51,11 +51,11 @@ Estados devem continuar identificáveis por texto ou ícone, além da cor. Mante
 
 ## Navegação e layout
 
-O painel autenticado usa uma sidebar azul com a logo branca, o usuário conectado e sete áreas: visão geral, processos, projetos, logs, usuários, builds e configurações. `components/layout/Sidebar.tsx` centraliza os destinos; `app/App.tsx` controla a área ativa. As telas ficam em `features/`, os estilos globais em `styles/global.css` e a tela de login em `features/auth/Login.tsx`. O estado ativo, o hover, os ícones e o foco de teclado da navegação usam os tokens `--ds-color-navigation-*` e `--ds-color-shell-*`.
+O painel autenticado usa uma sidebar azul com a logo branca, o usuário conectado e cinco áreas: Home, projetos, logs, builds e configurações. Usuários fica dentro de Configurações para administradores. `components/layout/Sidebar.tsx` centraliza os destinos; `app/App.tsx` controla a área ativa. As telas ficam em `features/`, os estilos globais em `styles/global.css` e a tela de login em `features/auth/Login.tsx`. O estado ativo, o hover, os ícones e o foco de teclado da navegação usam os tokens `--ds-color-navigation-*` e `--ds-color-shell-*`.
 
 Em desktop, a sidebar permanece visível enquanto o conteúdo rola. Em telas menores que 768 px, ela vira uma barra superior com navegação horizontal. O conteúdo mantém largura flexível e tabelas rolam dentro do próprio card. O atalho “Ir para o conteúdo” permite pular a navegação usando o teclado.
 
-A visão geral mostra quatro indicadores em duas colunas e um resumo de até seis processos; a tabela completa, com portas e ações, fica na área Processos. Cadastros e envios em andamento bloqueiam a troca de área até a conclusão. Em Configurações, a atualização dos processos pode ser pausada durante a sessão.
+A Home mostra os quatro indicadores em uma linha no desktop, duas colunas até 1200 px e uma até 640 px. Abaixo ficam todos os processos, com portas, busca, ações e seletor Lista/Cards. Cadastros e envios em andamento bloqueiam a troca de área até a conclusão. Em Configurações, a atualização dos processos pode ser pausada durante a sessão.
 
 Na área Processos, o seletor **Lista / Cards** alterna a apresentação das aplicações sem alterar os dados ou a busca. A lista é o formato inicial; a preferência é salva no `localStorage` deste navegador sob a chave `monitor-pm2:applications-layout`. Se o armazenamento estiver indisponível, a troca continua funcionando durante a navegação atual. Os cards usam duas colunas no desktop e uma no celular e incluem o atalho **Novo processo**. Status, portas e ações são componentes compartilhados entre os dois formatos, incluindo o bloqueio de ações durante uma operação.
 
