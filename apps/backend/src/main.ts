@@ -36,7 +36,7 @@ import {
   versionId,
 } from "./versions/versions.service";
 import { archiveExtension } from "./versions/archive-format";
-import { projectRoutes } from "./projects/projects.routes";
+import { projectRoutes, closeBuildProgressStreams } from "./projects/projects.routes";
 import {
   listProjectBuilds,
   recoverProjectBuilds,
@@ -45,6 +45,8 @@ import { startLogCollector } from "./logs/logs.service";
 import { createProcessStream } from "./pm2/process-stream";
 import {
   listProcesses,
+  setProcessLabel,
+  setProcessProject,
   processAction,
   processLogs,
   pickEcosystem,
@@ -65,7 +67,7 @@ app.disable("x-powered-by");
 app.use(
   compression({
     filter: (request, response) =>
-      request.path !== "/api/processes/stream" &&
+      !request.path.endsWith("/stream") &&
       compression.filter(request, response),
   }),
 );
@@ -250,6 +252,18 @@ app.post("/api/versions/:id/start", authenticate, async (request, response) => {
 app.get("/api/processes", authenticate, async (_request, response) =>
   response.json(await listProcesses()),
 );
+app.put("/api/processes/:id/project", authenticate, async (request, response) => {
+  response.json(await setProcessProject(parseId(request.params.id), request.body, response.locals.username));
+});
+app.put("/api/processes/:id/label", authenticate, async (request, response) => {
+  response.json(
+    await setProcessLabel(
+      parseId(request.params.id),
+      request.body,
+      response.locals.username,
+    ),
+  );
+});
 app.get("/api/processes/stream", authenticate, (_request, response) => {
   processStream.subscribe(
     response,
@@ -372,6 +386,7 @@ async function start() {
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
       processStream.close();
+      closeBuildProgressStreams();
       server.close(async () => {
         await stopCollector();
         await stopRetention();

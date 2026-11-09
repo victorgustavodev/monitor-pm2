@@ -1,3 +1,4 @@
+import type { BuildControl } from "./build-progress";
 import {
   copyFile,
   lstat,
@@ -28,13 +29,14 @@ async function exists(path: string) {
   });
 }
 
-export async function scanBuild(root: string) {
+export async function scanBuild(root: string, signal?: AbortSignal) {
   const files: string[] = [];
   let bytes = 0,
     entries = 0;
   async function walk(path: string) {
     const directory = await projectPath(root, path);
     for (const item of await readdir(directory, { withFileTypes: true })) {
+      signal?.throwIfAborted();
       if (++entries > 50_000)
         throw new HttpError(400, "O build excede o limite de 50 mil entradas.");
       const child = relativeProjectPath(
@@ -84,6 +86,7 @@ export async function prepareDeployment(
   files: string[],
   previousFiles: string[],
   attempt: string,
+  control?: BuildControl,
 ) {
   await assertNoLinks(root);
   await assertNoLinks(attempt, true);
@@ -92,6 +95,7 @@ export async function prepareDeployment(
   const operations: FileOperation[] = [];
   await mkdir(attempt, { recursive: true });
   for (const path of paths) {
+    control?.signal.throwIfAborted();
     relativeProjectPath(path);
     const target = await projectPath(root, path, true);
     const info = await exists(target);
@@ -112,7 +116,9 @@ export async function prepareDeployment(
     flag: "wx",
   });
   return async () => {
+    let done = 0;
     for (const operation of operations) {
+      control?.signal.throwIfAborted();
       if (operation.remove) {
         const target = await projectPath(root, operation.path, true);
         await unlink(target).catch((error: NodeJS.ErrnoException) => {
@@ -125,6 +131,8 @@ export async function prepareDeployment(
           operation.path,
         );
       }
+      done++;
+      control?.report(60 + Math.floor(24 * done / operations.length), "Atualizando arquivos do projeto");
     }
   };
 }

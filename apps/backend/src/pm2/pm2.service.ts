@@ -10,6 +10,12 @@ import { withArtifactAccess } from "../common/artifact-access";
 import { homedir } from "node:os";
 import { collectArtifactPaths, savedArtifactPaths } from "./artifact-paths";
 import { selectProjectProcesses } from "./project-processes";
+import { createHash } from "node:crypto";
+import { ObjectId } from "mongodb";
+import { withProjectConfiguration } from "../projects/project-operations";
+import { processIdentity, processScope, resolveProcessProjects } from "./process-projects";
+import { processLabels, processProjects, projects } from "../common/database";
+import type { Pm2Row } from "./pm2-output";
 
 export const startEcosystem = (
   ...args: Parameters<typeof startEcosystemInternal>
@@ -24,6 +30,13 @@ export const processAction = (
 const execFileAsync = promisify(execFile);
 export type ProcessAction = "start" | "restart" | "stop" | "delete";
 export interface ProcessView extends ProcessPorts {
+  projectId: string | null;
+  projectName: string | null;
+  projectUpdatedAt: string | null;
+  projectObservedAt: string;
+  label: string;
+  labelUpdatedAt: string | null;
+  namespace: string;
   id: number;
   name: string;
   status: string;
@@ -181,22 +194,110 @@ async function processRows() {
   return rows;
 }
 
+export async function setProcessLabel(
+  id: number,
+  body: Record<string, unknown> | undefined,
+  username: string,
+) {
+  const label = typeof body?.label === "string" ? body.label.trim() : null;
+  if (label === null || label.length > 80 || /[\x00-\x1f\x7f]/.test(label))
+    throw new HttpError(
+      400,
+      "Informe um nome de exibição de até 80 caracteres, sem quebras de linha.",
+    );
+  if (typeof body?.name !== "string" || typeof body?.namespace !== "string")
+    throw new HttpError(
+      400,
+      "Atualize a lista de processos antes de salvar o nome.",
+    );
+  const row = (await processRows()).find((process) => process.pm_id === id);
+  if (!row) throw new HttpError(404, "Processo PM2 não encontrado.");
+  const identity = processIdentity(row);
+  if (body.name !== identity.name || body.namespace !== identity.namespace)
+    throw new HttpError(
+      409,
+      "O processo mudou. Atualize a lista antes de salvar o nome.",
+    );
+  const updatedAt = new Date();
+  await processLabels.updateOne(
+    { scope: processScope(), ...identity },
+    {
+      $set: { label, updatedAt, updatedBy: username },
+      $setOnInsert: { createdAt: updatedAt },
+    },
+    { upsert: true },
+  );
+  return { ...identity, label, labelUpdatedAt: updatedAt.toISOString() };
+}
+
+export async function setProcessProject(
+  id: number,
+  body: Record<string, unknown> | undefined,
+  username: string,
+) {
+  if (typeof body?.name !== "string" || typeof body?.namespace !== "string" ||
+      (body.projectId !== null && (typeof body.projectId !== "string" || !/^[a-f0-9]{24}$/i.test(body.projectId))))
+    throw new HttpError(400, "Informe o projeto e a identidade do processo.");
+  return withProjectConfiguration(async () => {
+    const project = body.projectId === null ? null : await projects.findOne({ _id: new ObjectId(body.projectId as string) });
+    if (body.projectId !== null && !project) throw new HttpError(404, "Projeto não encontrado.");
+    if (project?.deleting || project?.deployment)
+      throw new HttpError(409, "Aguarde a conclusão da operação no projeto.");
+    const row = (await processRows()).find(row => row.pm_id === id);
+    if (!row) throw new HttpError(404, "Processo PM2 não encontrado.");
+    const identity = processIdentity(row);
+    if (body.name !== identity.name || body.namespace !== identity.namespace)
+      throw new HttpError(409, "O processo mudou. Atualize a lista antes de vincular.");
+    const previous = await processProjects.findOne({ scope: processScope(), ...identity });
+    const updatedAt = new Date(Math.max(Date.now(), (previous?.updatedAt.getTime() || 0) + 1));
+    await processProjects.updateOne({ scope: processScope(), ...identity }, {
+      $set: { projectId: project?._id || null, updatedAt, updatedBy: username },
+    }, { upsert: true });
+    return { ...identity, projectId: project?._id.toHexString() || null,
+      projectName: project?.name || null, projectUpdatedAt: updatedAt.toISOString() };
+  });
+}
+
 export async function listProcesses(): Promise<ProcessView[]> {
   const rows = await processRows();
   const ports = await inspectProcessPorts(rows);
-  return rows.map((item, index) => ({
-    ...ports[index],
-    id: Number(item.pm_id),
-    name: String(item.name),
-    status: String(item.pm2_env?.status ?? "unknown"),
-    pid: Number(item.pid ?? 0),
-    cpu: Number(item.monit?.cpu ?? 0),
-    memory: Number(item.monit?.memory ?? 0),
-    uptime: item.pm2_env?.pm_uptime ? Number(item.pm2_env.pm_uptime) : null,
-    restarts: Number(item.pm2_env?.restart_time ?? 0),
-    mode: String(item.pm2_env?.exec_mode ?? "unknown").replace("_mode", ""),
-    version: item.pm2_env?.version ? String(item.pm2_env.version) : null,
-  }));
+  const projectLinks = await resolveProcessProjects(rows);
+  const saved = rows.length
+    ? await processLabels
+        .find({
+          scope: processScope(),
+          name: { $in: rows.map((row) => processIdentity(row).name) },
+        })
+        .toArray()
+    : [];
+  const labels = new Map(
+    saved.map((record) => [
+      JSON.stringify([record.name, record.namespace]),
+      record,
+    ]),
+  );
+  return rows.map((item, index) => {
+    const identity = processIdentity(item);
+    const metadata = labels.get(
+      JSON.stringify([identity.name, identity.namespace]),
+    );
+    return {
+      ...ports[index],
+      ...projectLinks.get(item.pm_id)!,
+      ...identity,
+      label: metadata?.label || "",
+      labelUpdatedAt: metadata?.updatedAt.toISOString() || null,
+      id: Number(item.pm_id),
+      status: String(item.pm2_env?.status ?? "unknown"),
+      pid: Number(item.pid ?? 0),
+      cpu: Number(item.monit?.cpu ?? 0),
+      memory: Number(item.monit?.memory ?? 0),
+      uptime: item.pm2_env?.pm_uptime ? Number(item.pm2_env.pm_uptime) : null,
+      restarts: Number(item.pm2_env?.restart_time ?? 0),
+      mode: String(item.pm2_env?.exec_mode ?? "unknown").replace("_mode", ""),
+      version: item.pm2_env?.version ? String(item.pm2_env.version) : null,
+    };
+  });
 }
 
 async function assertExists(id: number) {
@@ -213,7 +314,7 @@ export async function processArtifactPaths(): Promise<string[]> {
   ];
 }
 
-export async function getProjectProcesses(root: string) {
+export async function getProjectProcesses(root: string, projectId?: string) {
   const rows = await processRows();
   try {
     collectArtifactPaths(rows.map((row) => row.pm2_env));
@@ -223,12 +324,21 @@ export async function getProjectProcesses(root: string) {
       "Não foi possível identificar com segurança os processos vinculados ao projeto.",
     );
   }
-  return selectProjectProcesses(rows, root);
+  if (!projectId) return selectProjectProcesses(rows, root);
+  const links = await resolveProcessProjects(rows);
+  const linked = rows.filter(row => links.get(row.pm_id)?.projectId === projectId).sort((a, b) => a.pm_id - b.pm_id);
+  return {
+    processes: linked.map(row => ({ id: row.pm_id, name: processIdentity(row).name, status: String(row.pm2_env?.status || "unknown") })),
+    revision: createHash("sha256").update(JSON.stringify(linked.map(row => ({
+      id: row.pm_id, ...processIdentity(row), cwd: row.pm2_env?.pm_cwd,
+      script: row.pm2_env?.pm_exec_path, projectId,
+    })))).digest("hex"),
+  };
 }
 
-export async function stopProjectProcesses(root: string, revision: string) {
+export async function stopProjectProcesses(root: string, revision: string, projectId?: string) {
   return withArtifactAccess(async () => {
-    const snapshot = await getProjectProcesses(root);
+    const snapshot = await getProjectProcesses(root, projectId);
     if (snapshot.revision !== revision)
       throw new HttpError(
         409,
@@ -238,7 +348,7 @@ export async function stopProjectProcesses(root: string, revision: string) {
     try {
       for (const process of snapshot.processes) {
         // Recheck identities before each action; never stop an ID that changed ownership.
-        if ((await getProjectProcesses(root)).revision !== revision)
+        if ((await getProjectProcesses(root, projectId)).revision !== revision)
           throw new HttpError(
             409,
             "Os processos vinculados mudaram. Abra a confirmação de exclusão novamente.",

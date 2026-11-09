@@ -1,9 +1,10 @@
+import type { ProcessProjectActions } from "./processes";
 import { t } from "../../i18n";
 import { useMemo, useState } from "react";
 import { CircleOff, Search, List, LayoutGrid } from "lucide-react";
 import { ProcessTable } from "./ProcessTable";
 import { ProcessCards } from "./ProcessCards";
-import type { Process, ProcessAction } from "./processes";
+import type { Process, ProcessAction, SaveProcessLabel } from "./processes";
 
 type ApplicationLayout = "list" | "cards";
 const layoutStorageKey = "monitor-pm2:applications-layout";
@@ -27,6 +28,9 @@ export function Applications({
   onAction,
   onLogs,
   onAdd,
+  onLabelSave,
+  onProjectEdit,
+  onOpenProject,
 }: {
   processes: Process[];
   query: string;
@@ -36,12 +40,15 @@ export function Applications({
   onAction: (process: Process, action: ProcessAction) => void;
   onLogs: (process: Process) => void;
   onAdd: () => void;
-}) {
+  onLabelSave: SaveProcessLabel;
+} & ProcessProjectActions) {
   const [layout, setLayout] = useState<ApplicationLayout>(savedLayout);
   const filtered = useMemo(
     () =>
       processes.filter((item) =>
-        item.name.toLowerCase().includes(query.toLowerCase()),
+        `${item.name} ${item.label || ""} ${item.projectName || ""}`
+          .toLowerCase()
+          .includes(query.toLowerCase()),
       ),
     [processes, query],
   );
@@ -117,6 +124,9 @@ export function Applications({
       )}
       {layout === "list" ? (
         <ProcessTable
+          onProjectEdit={onProjectEdit}
+          onOpenProject={onOpenProject}
+          onLabelSave={onLabelSave}
           processes={filtered}
           busy={busy}
           onAction={onAction}
@@ -124,6 +134,9 @@ export function Applications({
         />
       ) : (
         <ProcessCards
+          onProjectEdit={onProjectEdit}
+          onOpenProject={onOpenProject}
+          onLabelSave={onLabelSave}
           processes={filtered}
           busy={busy}
           onAction={onAction}

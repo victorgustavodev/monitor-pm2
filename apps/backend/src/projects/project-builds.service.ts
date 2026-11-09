@@ -1,3 +1,4 @@
+import type { BuildControl } from "./build-progress";
 import { createReadStream } from "node:fs";
 import { withArtifactAccess } from "../common/artifact-access";
 import { withProjectOperation as exclusive } from "./project-operations";
@@ -97,6 +98,7 @@ async function deploy(
   project: WithId<ProjectRecord>,
   build: WithId<ProjectBuildRecord>,
   username: string,
+  control?: BuildControl,
 ) {
   if (project.deployment)
     throw new HttpError(
@@ -113,14 +115,15 @@ async function deploy(
     resolve(folder, "source"),
     build.sourceRoot || "",
   );
-  let files = await scanBuild(source);
+  control?.report(35, "Validando arquivos");
+  let files = await scanBuild(source, control?.signal);
   let configInBuild = files.includes(project.pm2ConfigPath);
   if (!configInBuild && project.pm2ConfigContent) {
     // Snapshot the project configuration once so old builds remain reproducible.
     const config = await projectPath(source, project.pm2ConfigPath, true);
     await mkdir(dirname(config), { recursive: true });
     await writeFile(config, project.pm2ConfigContent, { flag: "wx" });
-    files = await scanBuild(source);
+    files = await scanBuild(source, control?.signal);
     configInBuild = true;
   }
   if (!configInBuild) {
@@ -154,12 +157,14 @@ async function deploy(
   }
   const attemptId = randomUUID();
   const attempt = deploymentFolder(project._id, build._id, attemptId);
+  control?.report(45, "Preparando cópia de segurança");
   const apply = await prepareDeployment(
     project.rootPath,
     source,
     files,
     previousFiles,
     attempt,
+    control,
   );
   await projects.updateOne(
     { _id: project._id },
@@ -173,10 +178,13 @@ async function deploy(
     { $set: { status: "deploying" }, $unset: { error: "" } },
   );
   try {
+    control?.report(60, "Atualizando arquivos do projeto");
     await apply();
+    control?.report(85, "Iniciando aplicação no PM2", false);
     await deployEcosystem(
       await projectPath(project.rootPath, project.pm2ConfigPath),
     );
+    control?.report(95, "Finalizando publicação", false);
     await writeFile(resolve(folder, "manifest.json"), JSON.stringify(files));
     const deployedAt = new Date();
     await projectBuilds.updateOne(
@@ -230,11 +238,13 @@ async function createProjectBuildInternal(
   file: Express.Multer.File | undefined,
   body: Record<string, unknown> | undefined,
   username: string,
+  control?: BuildControl,
 ) {
   if (!file)
     throw new HttpError(400, "Selecione o arquivo compactado do build.");
   try {
     return await exclusive(project._id, async () => {
+      control?.report(10, "Validando pacote recebido");
       const current = await getProject(project._id.toHexString());
       if (current.deployment)
         throw new HttpError(
@@ -277,7 +287,7 @@ async function createProjectBuildInternal(
       );
       if (!counter) throw new HttpError(404, "Projeto não encontrado.");
       const hash = createHash("sha256");
-      for await (const chunk of createReadStream(file.path)) hash.update(chunk);
+      for await (const chunk of createReadStream(file.path)) { control?.signal.throwIfAborted(); hash.update(chunk); }
       const record: ProjectBuildRecord = {
         projectId: project._id,
         name,
@@ -304,7 +314,8 @@ async function createProjectBuildInternal(
           { $set: { archiveReady: true } },
         );
         const source = resolve(folder, "source");
-        const extracted = await extractBuild(archive, source);
+        control?.report(20, "Extraindo arquivos do pacote");
+        const extracted = await extractBuild(archive, source, control?.signal);
         let sourceRoot = "";
         // Strip a packaging folder only when the configured ecosystem identifies it.
         if (extracted.ecosystem?.endsWith(`/${project.pm2ConfigPath}`)) {
@@ -320,6 +331,7 @@ async function createProjectBuildInternal(
           current,
           await getProjectBuild(project._id, insertedId.toHexString()),
           username,
+          control,
         );
       } catch (error) {
         await projectBuilds.updateOne(
@@ -353,6 +365,7 @@ async function deployProjectBuildInternal(
   rawProject: unknown,
   rawBuild: unknown,
   username: string,
+  control?: BuildControl,
 ) {
   const project = await getProject(rawProject);
   return exclusive(project._id, async () =>
@@ -360,6 +373,7 @@ async function deployProjectBuildInternal(
       await getProject(rawProject),
       await getProjectBuild(project._id, rawBuild),
       username,
+      control,
     ),
   );
 }

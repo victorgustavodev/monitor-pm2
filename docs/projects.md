@@ -21,7 +21,7 @@ Alterar `rootPath` cria a nova pasta se necessário, sem mover ou apagar arquivo
 
 **Sobre o projeto → Excluir projeto** primeiro consulta os processos vinculados e exige digitar o nome para confirmar. Remove permanentemente o documento do projeto, seus registros `project_builds` e `VERSIONS_DIR/projects/<projectId>`. A pasta principal da aplicação é preservada. A opção **Encerrar também os processos vinculados** começa desmarcada; se selecionada, executa `pm2 stop` e salva a lista, mantendo os processos registrados no PM2. Se houver falha ao parar, o cadastro não é excluído; confira processos que já possam ter sido parados antes de tentar novamente.
 
-O vínculo é determinado pelo script ou diretório de execução dentro da pasta principal atual do projeto, sem usar apenas o nome do processo. A prévia retorna processos e uma revisão baseada nas identidades e caminhos. Antes de parar cada processo, o backend verifica novamente a revisão; alterações exigem abrir uma nova confirmação. Projetos com builds também exigem uma consulta bem-sucedida às referências atuais e salvas do PM2; se algum processo usa a pasta dos artefatos armazenados, a exclusão é recusada mesmo que ele esteja parado. Links e junctions no caminho de armazenamento também são recusados.
+O vínculo explícito salvo em `process_projects` prevalece. Sem escolha explícita, o vínculo é determinado pelo script ou diretório de execução dentro da pasta principal atual do projeto. A prévia usa a mesma associação exibida na Home, incluindo processos vinculados manualmente fora da pasta; escolher Sem projeto impede a associação automática. A prévia retorna processos e uma revisão baseada nas identidades e caminhos. Antes de parar cada processo, o backend verifica novamente a revisão; alterações exigem abrir uma nova confirmação. Projetos com builds também exigem uma consulta bem-sucedida às referências atuais e salvas do PM2; se algum processo usa a pasta dos artefatos armazenados, a exclusão é recusada mesmo que ele esteja parado. Links e junctions no caminho de armazenamento também são recusados.
 
 Edição, exclusão e publicação compartilham um bloqueio por projeto. Cadastro e edição também compartilham um bloqueio de configuração para validar nomes e pastas sem sobreposição concorrente. A limpeza automática não executa durante essas alterações. Projetos com recuperação de publicação pendente precisam ser recuperados antes de editar ou excluir.
 
@@ -67,7 +67,7 @@ versions/projects/<projectId>/<buildId>/
     backup/                  # Arquivos anteriores afetados
 ```
 
-Pacotes, extrações, históricos e cópias de recuperação são preservados por padrão. A limpeza opcional de **Configurações** remove builds antigos conforme o prazo de retenção, preservando o build ativo, referências do PM2 e projetos com recuperação pendente. Ela também se aplica aos uploads avulsos; nunca remove a pasta principal da aplicação. Dimensione o disco e faça backup do MongoDB, de `VERSIONS_DIR` e das pastas das aplicações. Os uploads antigos continuam em **Builds → Uploads avulsos**, usando seu armazenamento e fluxo anteriores. Não há associação automática desses registros a pastas de projetos.
+Pacotes, extrações, históricos e cópias de recuperação são preservados por padrão. A limpeza opcional de **Configurações** remove builds antigos conforme o prazo de retenção, preservando o build ativo, referências do PM2 e projetos com recuperação pendente. Ela também se aplica aos uploads avulsos; nunca remove a pasta principal da aplicação. Dimensione o disco e faça backup do MongoDB, de `VERSIONS_DIR` e das pastas das aplicações. A interface de uploads avulsos e a tela global de builds foram removidas; novos envios pelo painel exigem abrir um projeto. Os registros e artefatos legados não são apagados nesta mudança, e a API legada permanece por compatibilidade. Não há associação automática desses registros a projetos.
 
 ## API autenticada
 
@@ -89,3 +89,9 @@ Pacotes, extrações, históricos e cópias de recuperação são preservados po
 | `GET /api/projects/:id/builds/:buildId/archive` | Baixa pacote original                                                                                     |
 
 Uploads e publicações podem demorar; configure o timeout do proxy de acordo com o tamanho dos pacotes. A conexão SSE existente continua atualizando processos e métricas. Listas de projetos, arquivos e builds são consultadas ao abrir a tela, após ações ou pelo botão de atualização; não fazem polling a cada 10 segundos.
+
+## Associação de processos
+
+Na Home, a coluna Projeto e o campo equivalente dos Cards mostram o projeto associado ou **Sem projeto**. **Vincular projeto / Alterar vínculo** permite selecionar qualquer projeto disponível ou remover a associação. A escolha é compartilhada entre usuários e instâncias cluster com o mesmo nome e namespace no mesmo PM2_HOME, persistindo após troca de ID. Não muda diretório, ecosystem ou estado do processo. Projetos publicados são reconhecidos pela pasta quando não existe uma escolha explícita.
+
+Excluir um projeto limpa suas associações explícitas, preservando registros sem vínculo para impedir reassociação indevida por pasta. A exclusão sem a opção de encerramento conserva os processos no PM2. Edição, exclusão e alteração de vínculo compartilham o bloqueio de configuração para impedir referências a um projeto excluído durante o salvamento.

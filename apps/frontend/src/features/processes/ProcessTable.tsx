@@ -1,5 +1,9 @@
+import { ProcessProject } from "./components/ProcessProject";
+import type { ProcessProjectActions } from "./processes";
 import { t } from "../../i18n";
 import { ProcessActions, ProcessPort, ProcessStatus } from "./ProcessDisplay";
+import { ProcessLabel } from "./components/ProcessLabel";
+import type { SaveProcessLabel } from "./processes";
 import {
   formatMemory,
   formatUptime,
@@ -12,18 +16,24 @@ export function ProcessTable({
   busy,
   onAction,
   onLogs,
+  onLabelSave,
+  onProjectEdit,
+  onOpenProject,
 }: {
   processes: Process[];
   busy: number | null;
   onAction: (process: Process, action: ProcessAction) => void;
   onLogs: (process: Process) => void;
-}) {
+  onLabelSave: SaveProcessLabel;
+} & ProcessProjectActions) {
   return (
     <div className="glass overflow-x-auto rounded-2xl border border-line">
       <table className="w-full min-w-[1000px] text-left text-sm">
         <thead className="bg-canvas text-xs uppercase tracking-wider text-muted">
           <tr>
             <th className="px-5 py-3">{t("Aplicação")}</th>
+            <th className="px-3 py-3">{t("Nome de exibição")}</th>
+            <th className="px-3">{t("Projeto")}</th>
             <th>{t("Status")}</th>
             <th>{t("Porta")}</th>
             <th>CPU</th>
@@ -45,6 +55,14 @@ export function ProcessTable({
                   id {process.id} · PID {process.pid || "—"} · {process.mode}
                 </div>
               </td>
+              <td className="px-3 py-4">
+                <ProcessLabel
+                  process={process}
+                  busy={busy !== null}
+                  onSave={onLabelSave}
+                />
+              </td>
+              <td className="px-3 py-4"><ProcessProject process={process} busy={busy !== null} onProjectEdit={onProjectEdit} onOpenProject={onOpenProject} /></td>
               <td>
                 <ProcessStatus status={process.status} badge />
               </td>

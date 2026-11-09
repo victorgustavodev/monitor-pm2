@@ -4,12 +4,13 @@ Painel web para visualizar e operar processos do PM2 em uma VM Windows. O fronte
 
 ## Funcionalidades
 
-- Navegação lateral com Home, projetos, logs, builds e configurações; em celular, a navegação fica no topo. A Home reúne quatro indicadores e a lista completa de processos, com busca e modos Lista/Cards.
+- Navegação lateral com Home, Projetos e Configurações expansível (Geral, Logs e Usuários); em celular, a navegação fica no topo. A Home reúne quatro indicadores e a lista completa de processos, com busca e modos Lista/Cards.
 - Projetos com navegação pelos arquivos da VM, visualização de texto, download e histórico de builds com autor e comentário obrigatório.
 - Publicação de builds na pasta cadastrada do projeto, execução do ecosystem PM2 e possibilidade de republicar versões anteriores.
 - Limpeza automática opcional, com prazo de retenção e intervalo configuráveis, preservando builds ativos e arquivos referenciados pelo PM2.
 - Interface em português do Brasil, inglês e espanhol, selecionável em Configurações.
 - Lista status, PID, portas TCP, CPU, memória, uptime e reinícios dos processos.
+- Permite vincular um nome de exibição ao processo, como `processText3920 → workTabs`, com edição na lista e nos cards e busca pelo nome técnico ou de exibição.
 - Atualiza métricas e processos por SSE, sem consultas periódicas do navegador.
 - Permite alternar as aplicações entre lista e cards, mantendo a busca e as ações nos dois formatos e salvando a preferência no navegador.
 - Inicia, para, reinicia e remove processos; também permite iniciar um ecosystem já existente na VM.
@@ -106,6 +107,12 @@ O stream envia sinais de manutenção a cada 15 segundos, verifica se o usuário
 
 Se houver IIS ou outro proxy reverso, desabilite o buffering e a compressão para essa rota e permita respostas de longa duração, para que os eventos cheguem sem atraso. O Express já desabilita a compressão nessa rota e envia `X-Accel-Buffering: no` para proxies que reconhecem esse cabeçalho.
 
+## Nomes de exibição dos processos
+
+Na Home, use **Adicionar nome** na coluna **Nome de exibição** (ou no card), informe por exemplo `workTabs` e clique em **Salvar**. O nome técnico do PM2 permanece visível. Para alterar, use **Editar nome**; para remover, salve o campo vazio. O limite é de 80 caracteres e a busca considera ambos os nomes.
+
+Os nomes são compartilhados entre usuários e persistidos na coleção MongoDB `process_labels`, vinculados ao nome técnico, namespace e `PM2_HOME`. Sobrevivem a reinícios e à recriação da mesma aplicação com outro ID; processos de namespaces diferentes ficam separados. Instâncias de um mesmo nome/namespace compartilham o nome de exibição. Salvar esse campo não renomeia nem reinicia o processo no PM2. A sincronização entre navegadores acompanha o SSE existente.
+
 ## Portas dos processos
 
 A coluna **Porta** prioriza as portas TCP em escuta no Windows, associadas ao PID do processo PM2 e aos seus subprocessos. Portas repetidas em IPv4/IPv6 aparecem uma única vez; aplicações com vários listeners exibem todas as portas. A inspeção é compartilhada por 5 segundos para evitar consultas repetidas ao sistema.
@@ -116,7 +123,7 @@ Quando não há uma porta confirmada em escuta ou a inspeção não está dispon
 
 ## Idiomas e limpeza automática
 
-Em **Configurações → Idioma**, escolha português do Brasil, inglês ou espanhol. A preferência fica neste navegador e não encerra a sessão. O catálogo de traduções fica em `apps/frontend/src/i18n/messages.ts`; frases em português são as chaves, com traduções `en` e `es`. Datas acompanham o idioma. Conteúdo dos projetos, comentários, nomes, logs e diagnósticos técnicos externos permanecem no idioma original. Consulte [internacionalização](docs/i18n.md) para ampliar o catálogo.
+Em **Configurações → Geral → Idioma**, escolha português do Brasil, inglês ou espanhol. A preferência fica neste navegador e não encerra a sessão. O catálogo de traduções fica em `apps/frontend/src/i18n/messages.ts`; frases em português são as chaves, com traduções `en` e `es`. Datas acompanham o idioma. Conteúdo dos projetos, comentários, nomes, logs e diagnósticos técnicos externos permanecem no idioma original. Consulte [internacionalização](docs/i18n.md) para ampliar o catálogo.
 
 Em **Limpeza automática de versões**, habilite a função, informe **Manter versões por (dias)** e **Executar limpeza a cada (horas)** e salve. Ela começa desabilitada; os valores iniciais são 30 dias e 24 horas. A configuração é compartilhada e persistida no MongoDB. A primeira execução fica agendada a partir do salvamento; o backend verifica o agendamento a cada minuto e retoma execuções vencidas após reiniciar.
 
@@ -132,7 +139,7 @@ A paleta e os tokens semânticos de cores ficam em `apps/frontend/src/styles/tok
 
 Na primeira inicialização, se a coleção `users` estiver vazia, o monitor cria o primeiro usuário com `ADMIN_USERNAME` e `ADMIN_PASSWORD` do `.env`. A senha deve ter entre 12 e 256 caracteres. Depois disso, os logins consultam o MongoDB; alterar essas variáveis não altera a senha de um usuário já cadastrado.
 
-Em **Configurações → Acessar usuários**, administradores podem listar e criar usuários, escolhendo os perfis **Usuário comum** (`user`, padrão) ou **Administrador** (`admin`). A opção e a tela só aparecem para administradores; a API também recusa listagem e criação por usuários comuns com HTTP 403. Usuários comuns continuam operando processos, projetos, builds, logs e as demais configurações. Não há cadastro público. Nomes de usuário são salvos em minúsculas e não podem se repetir.
+Em **Configurações → Usuários**, administradores podem listar e criar usuários, escolhendo os perfis **Usuário comum** (`user`, padrão) ou **Administrador** (`admin`). A opção e a tela só aparecem para administradores; a API também recusa listagem e criação por usuários comuns com HTTP 403. Usuários comuns continuam operando processos, projetos, builds, logs e as demais configurações. Não há cadastro público. Nomes de usuário são salvos em minúsculas e não podem se repetir.
 
 O primeiro usuário criado pelo `.env` é administrador. Na atualização de um banco antigo sem perfis, o sistema atribui `admin` à conta legada correspondente a `ADMIN_USERNAME`; se ela não existir, escolhe a conta legada mais antiga. As demais contas sem perfil recebem `user`. Perfis já definidos são preservados. A autorização consulta o perfil do MongoDB a cada requisição e não confia no antigo campo `role=admin` dos tokens.
 
@@ -150,59 +157,17 @@ Para excluir, abra **Sobre o projeto → Excluir projeto**. A confirmação most
 2. Abra o projeto para navegar em **Arquivos**, consultar **Builds** ou conferir os caminhos em **Sobre o projeto**. O acesso é direto ao sistema de arquivos da mesma VM, sem FTP.
 3. Clique em **Fazer novo build**, informe um nome único, descreva as alterações no comentário obrigatório e selecione o pacote compactado.
 4. **Enviar e publicar** guarda o original, extrai uma cópia para o histórico, aplica os arquivos na pasta principal e executa o ecosystem configurado no PM2. O autor é obtido da sessão autenticada.
-5. Para voltar a uma versão anterior, use **Publicar** no histórico. A tela **Builds** reúne os builds de todos os projetos e permite filtrar por projeto.
+5. Para voltar a uma versão anterior, use **Publicar** no histórico. O histórico de builds fica na aba **Builds** de cada projeto.
 
 O MongoDB mantém `projects` e `project_builds` separados, relacionados por `projectId` (um projeto possui muitos builds). O projeto guarda `activeBuildId`, sem incorporar uma lista crescente de builds. Consulte [Projetos: dados, publicação e API](docs/projects.md) para contratos, limites e recuperação de falhas.
 
 Arquivos gerenciados pelo build anterior e ausentes no novo pacote são removidos; arquivos locais que nunca fizeram parte desses builds são preservados. Antes da publicação, o monitor salva uma cópia dos arquivos afetados. Em caso de falha, tenta restaurá-los; uma operação interrompida é recuperada na inicialização seguinte. Isso não desfaz operações já executadas pelo PM2 nem substitui uma verificação de saúde: confira os processos após uma falha.
 
-## Uploads avulsos e versões existentes
+## Processos vinculados a projetos
 
-1. Gere o build do projeto e empacote os arquivos prontos para execução em um único `.zip`, `.rar`, `.7z`, `.tar`, `.tar.gz`, `.tar.bz2` ou `.tar.xz`, sem senha e sem divisão em volumes. Os aliases `.tgz`, `.tbz`, `.tbz2` e `.txz` também são aceitos.
-2. Abra **Builds → Uploads avulsos**, informe o projeto e a versão (por exemplo, `minha-app` e `1.2.0`) e selecione o arquivo.
-3. Clique em **Salvar versão**. O upload apenas salva e extrai o build.
-4. Para executar no PM2, clique em **Iniciar** na versão desejada. Ela deve conter exatamente um `ecosystem.config.js`, na raiz ou dentro de uma pasta do arquivo compactado.
+A Home mostra o projeto na Lista e nos Cards. Clique no nome para abrir o projeto, ou em **Vincular projeto / Alterar vínculo** para selecionar um projeto ou deixar **Sem projeto**. A busca também considera o nome do projeto. Processos executados na pasta de um projeto são reconhecidos automaticamente até o usuário escolher um vínculo explícito. A escolha é salva no MongoDB por PM2_HOME, nome e namespace; não reinicia nem move o processo.
 
-O build precisa incluir as dependências necessárias para sua execução. O monitor não executa instalação de dependências nem compila o projeto enviado.
-
-Exemplo de conteúdo do arquivo compactado:
-
-```text
-ecosystem.config.js
-dist/
-  main.js
-node_modules/
-  ...dependências de execução, quando necessárias
-```
-
-Exemplo do ecosystem:
-
-```javascript
-module.exports = {
-  apps: [
-    {
-      name: "minha-app",
-      script: "./dist/main.js",
-      exec_mode: "fork",
-      env: { NODE_ENV: "production" },
-    },
-  ],
-};
-```
-
-Os caminhos relativos são resolvidos a partir da pasta do ecosystem; `cwd`, quando informado, também é resolvido a partir dela. Mantenha o mesmo nome e namespace dos processos para que uma nova versão atualize os processos existentes. Iniciar uma versão anterior troca os scripts de volta para aquele build. O estado **Iniciada** indica que o envio ao PM2 foi concluído; o estado atual do processo aparece na tabela **Aplicações**. O deploy não executa uma verificação de saúde da aplicação nem desfaz automaticamente operações parciais de um ecosystem com vários processos.
-
-Os arquivos ficam em:
-
-```text
-versions/
-  <id-da-versao>/
-    build.zip  # Mantém o formato enviado: build.rar, build.7z, build.tar.gz etc.
-    build/
-      ...arquivos extraídos
-```
-
-O MongoDB guarda projeto, versão, nome original, tamanho, hash SHA-256, usuário responsável, datas e estado. Projeto e versão não diferenciam maiúsculas de minúsculas; a mesma combinação não pode ser sobrescrita. A listagem mostra as 200 versões mais recentes. Builds sem ecosystem também podem ser armazenados e baixados, mas não iniciados pelo painel. Arquivos inválidos, criptografados, links simbólicos, hard links, caminhos fora da pasta do build e uploads acima dos limites são recusados. A extração tem limite de 2 minutos e 50 mil entradas e usa WebAssembly, sem exigir WinRAR ou 7-Zip instalados na VM. TARs com prefixos `./` são aceitos. Os arquivos RAR enviados anteriormente continuam disponíveis para download e execução. Métodos de compressão não suportados pelo extrator são recusados.
+Publicações e históricos ficam dentro de Projetos. A tela global de builds e os uploads avulsos foram removidos da interface. Artefatos existentes e APIs legadas são preservados por compatibilidade, sem migração ou exclusão automática.
 
 ## Logs
 
@@ -244,12 +209,14 @@ As rotas abaixo exigem sessão, exceto login e health:
 - `GET /api/users`, `POST /api/users` com JSON `{ "username": "operador", "password": "senha-com-12-ou-mais", "role": "user" }`; exclusivos de administradores, `role` opcional (`user` ou `admin`)
 - `GET /api/settings/retention`, `PUT /api/settings/retention` com JSON `{ "enabled": true, "retentionDays": 30, "intervalHours": 24 }`; limites: 1–3650 dias e 1–8760 horas
 - `GET /api/processes`
+- `PUT /api/processes/:id/label` com JSON `{ "name": "processText3920", "namespace": "default", "label": "workTabs" }`; `label` vazio remove o nome de exibição
 - `GET /api/processes/stream` (SSE: eventos `processes`, `metrics-error` e `session-expired`)
 - `POST /api/processes/:id/start|stop|restart|delete`
 - `GET /api/processes/:id/logs?lines=150`
 - `POST /api/ecosystems` com JSON `{ "path": "C:\\servicos\\minha-app\\ecosystem.config.js" }`
 - `POST /api/ecosystems/pick` para abrir o seletor na sessão Windows da VM
 - `GET /api/projects`, `POST /api/projects`, `GET /api/projects/:id`
+- `PUT /api/processes/:id/project` com JSON `name`, `namespace` e `projectId` (ID ou `null` para desvincular)
 - `PUT /api/projects/:id` com JSON `name`, `description`, `rootPath`, `pm2ConfigPath`; `DELETE /api/projects/:id` remove cadastro, builds e arquivos armazenados, preservando a pasta publicada
 - `GET /api/projects/:id/deletion-preview` lista processos vinculados e retorna uma revisão; `DELETE /api/projects/:id` aceita `{ "stopProcesses": true, "processRevision": "revisão recebida" }` para pará-los antes de excluir
 - `GET /api/projects/:id/files?path=...`, `GET /api/projects/:id/files/download?path=...`
@@ -275,4 +242,4 @@ Os testes do backend usam um MongoDB temporário (o binário é baixado na prime
 
 Os testes de projetos também cobrem isolamento de pastas, navegação, publicação, comentário obrigatório, autoria, concorrência, retorno a builds anteriores e recuperação de arquivos após falhas ou reinício.
 
-Os testes do frontend usam um DOM simulado e respostas de API de teste para verificar a navegação entre as cinco áreas, a Home com métricas e processos, o acesso de administradores a Usuários dentro de Configurações, a atualização automática, os bloqueios durante operações e a confirmação opcional de parada ao excluir projetos. Eles não iniciam processos PM2 nem alteram o banco real.
+Os testes do frontend usam um DOM simulado e respostas de API de teste para verificar a navegação e expansão do submenu da sidebar, a Home com métricas e processos, o acesso de administradores ao destino Usuários, a atualização automática, os bloqueios durante operações e a confirmação opcional de parada ao excluir projetos. Eles não iniciam processos PM2 nem alteram o banco real.

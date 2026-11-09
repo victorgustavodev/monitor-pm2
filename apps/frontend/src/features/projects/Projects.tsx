@@ -1,3 +1,5 @@
+import { useBuildPublication } from "./useBuildPublication";
+import { BuildProgressModal } from "./components/BuildProgressModal";
 import { t } from "../../i18n";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
@@ -37,6 +39,7 @@ export function Projects({
   onSessionExpired: () => void;
   onBusyChange: (busy: boolean) => void;
 }) {
+  const publication = useBuildPublication();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [formBusy, setFormBusy] = useState(false);
@@ -112,10 +115,7 @@ export function Projects({
     setError("");
     setNotice("");
     try {
-      await api(`/api/projects/${selected._id}/builds`, {
-        method: "POST",
-        body: data,
-      });
+      await publication.run(selected._id, `/api/projects/${selected._id}/builds`, data);
       setShowBuild(false);
       setNotice(t("Build publicado. A aplicação foi enviada ao PM2."));
       await published();
@@ -203,6 +203,7 @@ export function Projects({
   );
   return (
     <div className="projects-content">
+      <BuildProgressModal publication={publication} />
       {error && (
         <p role="alert" className="project-message error">
           {error}

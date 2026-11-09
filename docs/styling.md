@@ -90,3 +90,7 @@ Favicon e `theme-color` são artefatos independentes do CSS. Uma mudança de mar
 - Estilos gerais: `src/styles/global.css`, se presente.
 - [Design Tokens Format Module](https://www.designtokens.org/tr/2025.10/format/).
 - [Tailwind CSS — Theme variables](https://tailwindcss.com/docs/theme/).
+
+## Submenu de configurações
+
+Configurações é um botão de expansão com `aria-expanded` e `aria-controls`. Geral, Logs e Usuários aparecem em uma lista abaixo dele; o destino ativo usa `aria-current="page"`. No celular a navegação principal continua horizontal e o grupo se expande verticalmente, dentro do fluxo, sem sobrepor o conteúdo. Usuários só aparece para administradores. Os links herdam tokens e foco da sidebar existente.

@@ -1157,3 +1157,75 @@ input::placeholder {
     grid-template-columns: 1fr;
   }
 }
+.process-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 155px;
+}
+.process-label-value {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--ds-color-subtle);
+  color: var(--ds-color-accent);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.process-label button,
+.process-label-editor button {
+  color: var(--ds-color-link);
+  font-size: 11px;
+}
+.process-label button:hover,
+.process-label-editor button:hover {
+  text-decoration: underline;
+}
+.process-label-editor {
+  display: grid;
+  gap: 7px;
+  min-width: 190px;
+  max-width: 300px;
+}
+.process-label-editor input {
+  min-width: 0;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--ds-color-line);
+  border-radius: 6px;
+  background: var(--ds-color-surface);
+  font-size: 12px;
+}
+.process-label-editor input:focus {
+  outline: 1px solid var(--ds-color-focus);
+}
+.process-label-editor small {
+  color: var(--ds-color-muted);
+  font-size: 10px;
+}
+.process-label-editor > div {
+  display: flex;
+  gap: 14px;
+}
+.process-label-editor .process-label-error {
+  color: var(--ds-color-danger);
+  font-size: 11px;
+}
+.application-card-label {
+  margin: 10px 0;
+}
+.application-card-label > small {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ds-color-muted);
+  font-size: 11px;
+}
+
+.sidebar-submenu { display: grid; gap: 4px; padding: 4px 0 0 16px; }
+.sidebar-chevron { margin-left: auto; transition: transform 150ms; }
+.sidebar-chevron.expanded { transform: rotate(180deg); }
+@media (max-width: 767px) {
+  .sidebar-nav { align-items: flex-start; }
+  .sidebar-settings { flex-shrink: 0; }
+  .sidebar-submenu { padding-left: 8px; }
+}

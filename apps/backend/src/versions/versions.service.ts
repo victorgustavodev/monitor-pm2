@@ -77,7 +77,9 @@ export function versionFolder(id: ObjectId): string {
 export async function extractBuild(
   archive: string,
   target: string,
+  signal?: AbortSignal,
 ): Promise<{ ecosystem?: string }> {
+  signal?.throwIfAborted();
   const workerPath = resolve(__dirname, `archive-worker${extname(__filename)}`);
   const worker = new Worker(workerPath, {
     workerData: { archive, target, maxBytes: env.extractedMaxBytes },
@@ -85,8 +87,13 @@ export async function extractBuild(
       ? { execArgv: ["--require", require.resolve("tsx/cjs")] }
       : {}),
   });
+  let abort: (() => void) | undefined;
+  let abortTimer: NodeJS.Timeout | undefined;
   try {
     return await new Promise((resolveResult, reject) => {
+      abort = () => { clearTimeout(abortTimer); reject(signal?.reason); };
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
       const timer = setTimeout(
         () =>
           reject(
@@ -97,6 +104,7 @@ export async function extractBuild(
           ),
         120_000,
       );
+      abortTimer = timer;
       worker.once(
         "message",
         (result: { error?: string; ecosystem?: string }) => {
@@ -123,6 +131,8 @@ export async function extractBuild(
       });
     });
   } finally {
+    clearTimeout(abortTimer);
+    if (abort) signal?.removeEventListener("abort", abort);
     await worker.terminate();
   }
 }

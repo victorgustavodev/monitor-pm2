@@ -9,7 +9,11 @@ let failProcesses = false;
 let sessionRole = "admin";
 let pendingUser;
 let pendingAction;
+let pendingLink, failLink = false, failProjectChoices = false;
+let pendingLabel,
+  labelSaveCount = 0;
 let pendingProjectBuild;
+let pendingPublication;
 let pendingSettings;
 let pendingProjectUpdate, pendingProjectDelete;
 let retention = {
@@ -37,6 +41,7 @@ const projectRows = [
 const buildRows = [];
 const requests = [];
 const streams = [];
+const buildStreams = [];
 const intervals = [];
 const processes = [
   {
@@ -94,8 +99,8 @@ before(
       readyState = 1;
       constructor(url) {
         super();
-        assert.equal(url, "/api/processes/stream");
-        streams.push(this);
+        if (url.includes("/build-operations/")) buildStreams.push(this);
+        else { assert.equal(url, "/api/processes/stream"); streams.push(this); }
       }
       close() {
         this.readyState = 2;
@@ -123,6 +128,10 @@ before(
         method: options.method || "GET",
         body: options.body,
       });
+      url = String(url).replace(/\?operationId=.*$/, "");
+      if (url.endsWith("/build-operations") && options.method === "POST") return json({ id: "operation-1", percent: 0, stage: "Enviando pacote", status: "running", cancellable: true, logs: [] }, 201);
+      if (url.endsWith("/operation-1/cancel")) return json({ id: "operation-1", percent: 60, stage: "Cancelando", status: "running", cancellable: false, logs: [] });
+      if (/\/builds\/[^/]+\/deploy$/.test(url) && options.method === "POST") return new Promise(done => { pendingPublication = (status, message) => done(json({ message }, status)); });
       if (url === "/api/auth/me")
         return json({
           username: "tester",
@@ -133,6 +142,37 @@ before(
         return failProcesses
           ? json({ message: "PM2 indisponível." }, 502)
           : json(processes);
+      if (url === "/api/processes/1/project" && options.method === "PUT")
+        return new Promise(done => {
+          pendingLink = () => {
+            if (failLink) return done(json({ message: "Falha ao vincular." }, 409));
+            const data = JSON.parse(options.body);
+            const saved = { name: data.name, namespace: data.namespace, projectId: data.projectId,
+              projectName: projectRows.find(row => row._id === data.projectId)?.name || null,
+              projectUpdatedAt: new Date(Date.now() + ++labelSaveCount).toISOString() };
+            Object.assign(processes[0], saved);
+            done(json(saved));
+          };
+        });
+      if (url === "/api/processes/1/label" && options.method === "PUT")
+        return new Promise((done) => {
+          pendingLabel = () => {
+            const data = JSON.parse(options.body);
+            const saved = {
+              name: data.name,
+              namespace: data.namespace,
+              label: data.label.trim(),
+              labelUpdatedAt: new Date(
+                Date.now() + ++labelSaveCount,
+              ).toISOString(),
+            };
+            Object.assign(processes[0], {
+              label: saved.label,
+              labelUpdatedAt: saved.labelUpdatedAt,
+            });
+            done(json(saved));
+          };
+        });
       if (url === "/api/processes/1/restart" && options.method === "POST")
         return new Promise((resolve) => {
           pendingAction = () => resolve(new Response(null, { status: 204 }));
@@ -176,7 +216,7 @@ before(
         projectRows.push(project);
         return json(project, 201);
       }
-      if (url === "/api/projects") return json(projectRows);
+      if (url === "/api/projects") return failProjectChoices ? json({ message: "Falha ao carregar projetos." }, 502) : json(projectRows);
       if (String(url).endsWith("/deletion-preview"))
         return json({
           processes: [{ id: 1, name: "api-service", status: "online" }],
@@ -381,28 +421,42 @@ test("SSE applies metric updates and PM2 recovery without polling, and detects c
   );
 });
 async function go(label) {
-  if (label === "Usuários") {
-    await go("Configurações");
-    await act(async () =>
-      [...document.querySelectorAll("main button")]
-        .find((button) => button.textContent.trim() === "Acessar usuários")
-        .click(),
-    );
-    assert.ok(document.querySelector('input[name="username"]'));
-    return;
+  const originalLabel = label;
+  if (["Configurações", "Settings", "Configuración", "Logs", "Usuários"].includes(label)) {
+    const toggle = document.querySelector('[aria-controls="sidebar-settings-menu"]');
+    if (toggle.getAttribute("aria-expanded") !== "true") await act(async () => toggle.click());
+    if (["Configurações", "Settings", "Configuración"].includes(label))
+      label = document.documentElement.lang === "pt-BR" ? "Geral" : "General";
   }
   const button = navigation(label);
   assert.ok(button, label);
   await act(async () => button.click());
   assert.equal(navigation(label).getAttribute("aria-current"), "page");
-  const homeGreeting = { 'pt-BR': 'Olá, tester', en: 'Hello, tester', es: 'Hola, tester' };
-  assert.equal(document.querySelector("h1").textContent, ['Home', 'Inicio'].includes(label) ? homeGreeting[document.documentElement.lang] : label);
+  const homeGreeting = {
+    "pt-BR": "Olá, tester",
+    en: "Hello, tester",
+    es: "Hola, tester",
+  };
+  assert.equal(
+    document.querySelector("h1").textContent,
+    ["Home", "Inicio"].includes(label)
+      ? homeGreeting[document.documentElement.lang]
+      : originalLabel,
+  );
 }
 
-test("sidebar exposes five destinations and Home combines metrics with all process controls", async () => {
-  assert.equal(document.querySelectorAll("nav button").length, 5);
+test("sidebar expands settings destinations and Home combines metrics with all process controls", async () => {
+  assert.equal(document.querySelectorAll("nav button").length, 3);
   assert.equal(navigation("Usuários"), undefined);
   assert.equal(document.querySelector("h1").textContent, "Olá, tester");
+  const settingsToggle = document.querySelector('[aria-controls="sidebar-settings-menu"]');
+  await act(async () => settingsToggle.click());
+  assert.equal(settingsToggle.getAttribute("aria-expanded"), "true");
+  assert.ok(navigation("Logs"));
+  assert.ok(navigation("Usuários"));
+  assert.equal(document.querySelector("h1").textContent, "Olá, tester");
+  await act(async () => settingsToggle.click());
+  assert.equal(navigation("Logs"), undefined);
   assert.ok(document.querySelector('.sidebar-logo[alt="KPMG"]'));
   assert.match(
     document.querySelector(".sidebar-account").textContent,
@@ -433,18 +487,9 @@ test("sidebar exposes five destinations and Home combines metrics with all proce
   );
   await go("Usuários");
   assert.ok(document.querySelector('input[name="username"]'));
-  await go("Builds");
-  assert.ok(document.querySelector('[aria-label="Histórico de builds"]'));
-  await act(async () =>
-    [...document.querySelectorAll('[role="tab"]')]
-      .find((tab) => tab.textContent === "Uploads avulsos")
-      .click(),
-  );
-  assert.equal(
-    document.querySelector('input[type="file"]').accept,
-    ".zip,.rar,.7z,.tar,.tar.gz,.tgz,.tar.bz2,.tbz2,.tbz,.tar.xz,.txz",
-  );
-  assert.ok(requests.some((request) => request.url === "/api/versions"));
+  assert.equal(navigation("Builds"), undefined);
+  assert.equal(document.querySelector('[aria-label="Histórico de builds"]'), null);
+  assert.ok(!requests.some(request => request.url === "/api/versions"));
   await go("Configurações");
   assert.match(
     document.querySelector("main").textContent,
@@ -590,6 +635,174 @@ test("cards open the process dialog and logs, and keep actions locked when switc
   await go("Home");
 });
 
+test("display names persist in list and cards, participate in search, and survive stale SSE snapshots", async () => {
+  await go("Home");
+  const layoutButton = (label) =>
+    [
+      ...document.querySelectorAll(
+        '[aria-label="Visualização das aplicações"] button',
+      ),
+    ].find((button) => button.textContent === label);
+  await act(async () => layoutButton("Lista").click());
+  await act(async () =>
+    document
+      .querySelector('[aria-label="Editar nome de exibição de api-service"]')
+      .click(),
+  );
+  const field = document.querySelector(
+    '[aria-label="Nome de exibição de api-service"]',
+  );
+  const setInput = Object.getOwnPropertyDescriptor(
+    dom.window.HTMLInputElement.prototype,
+    "value",
+  ).set;
+  await act(async () => {
+    setInput.call(field, " workTabs ");
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  const stale = processes.map((process) => ({ ...process }));
+  await act(async () =>
+    field.form.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    ),
+  );
+  assert.equal(navigation("Projetos").disabled, true);
+  assert.equal(document.querySelector('[title="Reiniciar"]').disabled, true);
+  await act(async () => pendingLabel());
+  assert.equal(navigation("Projetos").disabled, false);
+  assert.equal(
+    document.querySelector(".process-label-value").textContent,
+    "workTabs",
+  );
+  assert.equal(processes[0].name, "api-service");
+  assert.deepEqual(
+    JSON.parse(
+      requests.findLast((request) => request.url === "/api/processes/1/label")
+        .body,
+    ),
+    { label: " workTabs ", name: "api-service", namespace: "default" },
+  );
+  await act(async () => streams.at(-1).emit("processes", stale));
+  assert.equal(
+    document.querySelector(".process-label-value").textContent,
+    "workTabs",
+  );
+  await act(async () => layoutButton("Cards").click());
+  assert.match(
+    document.querySelector('[aria-label="Aplicação api-service"]').textContent,
+    /workTabs/,
+  );
+  const search = document.querySelector('[aria-label="Buscar processo"]');
+  await act(async () => {
+    setInput.call(search, "WORKTABS");
+    search.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  assert.equal(document.querySelectorAll(".application-card").length, 1);
+  await act(async () =>
+    root.render(createElement(App, { key: "saved-process-label" })),
+  );
+  assert.equal(
+    document.querySelector(".process-label-value").textContent,
+    "workTabs",
+  );
+  await act(async () =>
+    document
+      .querySelector('[aria-label="Editar nome de exibição de api-service"]')
+      .click(),
+  );
+  const clear = document.querySelector(
+    '[aria-label="Nome de exibição de api-service"]',
+  );
+  assert.equal(clear.value, "workTabs");
+  const previouslySaved = processes.map((process) => ({ ...process }));
+  await act(async () => {
+    setInput.call(clear, "");
+    clear.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    clear.form.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    ),
+  );
+  await act(async () => pendingLabel());
+  await act(async () => streams.at(-1).emit("processes", previouslySaved));
+  assert.equal(document.querySelector(".process-label-value"), null);
+  assert.equal(processes[0].label, "");
+});
+
+test("process project links can be saved, searched, opened and cleared in list and cards without stale SSE overwrites", async () => {
+  await go("Home");
+  const layoutButton = label => [...document.querySelectorAll('.application-layout-selector button')].find(button => button.textContent === label);
+  await act(async () => layoutButton("Lista").click());
+  assert.match(document.querySelector("tbody").textContent, /Sem projeto/);
+  const stale = processes.map(row => ({ ...row }));
+  const edit = () => document.querySelector('[aria-label="Vincular projeto a api-service"]');
+  await act(async () => edit().click());
+  const dialog = () => document.querySelector('dialog[aria-labelledby="process-project-title"]');
+  const select = dialog().querySelector("select");
+  await act(async () => {
+    select.value = projectRows[0]._id;
+    select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  await act(async () => dialog().querySelector("form").dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  assert.equal(navigation("Projetos").disabled, true);
+  assert.ok([...dialog().querySelectorAll("button, select")].every(node => node.disabled));
+  assert.equal(document.querySelector('[title="Reiniciar"]').disabled, true);
+  await act(async () => pendingLink());
+  assert.equal(dialog(), null);
+  await act(async () => streams.at(-1).emit("processes", stale));
+  assert.match(document.querySelector("tbody").textContent, /Projeto X/);
+  await act(async () => layoutButton("Cards").click());
+  assert.match(document.querySelector(".application-card").textContent, /Projeto X/);
+  const search = document.querySelector('[aria-label="Buscar processo"]');
+  const setInput = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set;
+  await act(async () => { setInput.call(search, "Projeto X"); search.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  assert.equal(document.querySelectorAll(".application-card").length, 1);
+  await act(async () => { setInput.call(search, ""); search.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  await act(async () => [...document.querySelectorAll(".application-card button")].find(button => button.textContent === "Projeto X").click());
+  assert.match(document.querySelector(".repository-header").textContent, /Projeto X/);
+  await act(async () => [...document.querySelectorAll("main button")].find(button => button.textContent.trim() === "Todos os projetos").click());
+  await go("Home");
+  await act(async () => edit().click());
+  await act(async () => { dialog().querySelector("select").value = ""; dialog().querySelector("select").dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
+  const linked = processes.map(row => ({ ...row }));
+  await act(async () => dialog().querySelector("form").dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  await act(async () => pendingLink());
+  await act(async () => streams.at(-1).emit("processes", linked));
+  assert.match(document.querySelector(".application-card").textContent, /Sem projeto/);
+  // A fresh collection must also reflect project deletion or path changes.
+  const observed = new Date(Date.now() + 10000).toISOString();
+  await act(async () => streams.at(-1).emit("processes", linked.map(row => ({ ...row, projectId: null, projectName: null, projectUpdatedAt: null, projectObservedAt: observed }))));
+  assert.match(document.querySelector(".application-card").textContent, /Sem projeto/);
+});
+
+test("fresh project removal replaces saved metadata and stale snapshots cannot restore it or transfer it to another identity", async () => {
+  const { mergeProcessLabels } = await vite.ssrLoadModule("/src/features/processes/processes.ts");
+  const linked = { ...processes[0], projectId: "project-a", projectName: "Project A", projectUpdatedAt: "2026-11-01T00:00:00.000Z", projectObservedAt: "2026-11-01T00:00:00.000Z" };
+  const removed = { ...linked, projectId: null, projectName: null, projectUpdatedAt: null, projectObservedAt: "2026-11-02T00:00:00.000Z" };
+  assert.equal(mergeProcessLabels([removed], [linked])[0].projectId, null);
+  assert.equal(mergeProcessLabels([linked], [removed])[0].projectId, null);
+  assert.equal(mergeProcessLabels([{ ...removed, name: "replacement" }], [linked])[0].projectId, null);
+});
+
+test("link dialog handles loading and save failures and lets the user retry", async () => {
+  failProjectChoices = true;
+  await act(async () => document.querySelector('[aria-label="Vincular projeto a api-service"]').click());
+  const dialog = () => document.querySelector('dialog[aria-labelledby="process-project-title"]');
+  assert.match(dialog().querySelector('[role="alert"]').textContent, /Falha ao carregar/);
+  assert.equal(dialog().querySelector('[type="submit"]').disabled, true);
+  failProjectChoices = false;
+  await act(async () => [...dialog().querySelectorAll("button")].find(button => button.textContent === "Tentar novamente").click());
+  failLink = true;
+  await act(async () => dialog().querySelector("form").dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  await act(async () => pendingLink());
+  assert.match(dialog().querySelector('[role="alert"]').textContent, /Falha ao vincular/);
+  assert.equal(dialog().querySelector('[type="submit"]').disabled, false);
+  failLink = false;
+  await act(async () => [...dialog().querySelectorAll("button")].find(button => button.textContent === "Cancelar").click());
+  assert.equal(dialog(), null);
+});
+
 test("navigation stays disabled while a user creation is pending and returns afterward", async () => {
   await go("Usuários");
   document.querySelector('input[name="username"]').value = "operador";
@@ -617,7 +830,7 @@ test("navigation stays disabled while a user creation is pending and returns aft
   await go("Home");
 });
 
-test("projects browse local files, publish builds with comments and expose them in the global history", async () => {
+test("projects browse local files and keep build publication and history inside the project", async () => {
   const button = (text) =>
     [...document.querySelectorAll("main button")].find(
       (item) => item.textContent.trim() === text,
@@ -656,6 +869,9 @@ test("projects browse local files, publish builds with comments and expose them 
     ),
   );
   assert.ok(pendingProjectBuild);
+  assert.ok(document.querySelector(".build-progress-modal[open]"));
+  await act(async () => buildStreams.at(-1).emit("progress", { id: "operation-1", percent: 60, stage: "Atualizando arquivos do projeto", status: "running", cancellable: true, logs: ["Pacote recebido"] }));
+  assert.equal(document.querySelector(".build-progress-modal progress").value, 60);
   assert.ok(
     [
       ...document.querySelectorAll(
@@ -669,6 +885,8 @@ test("projects browse local files, publish builds with comments and expose them 
     /Extraindo e publicando/,
   );
   await act(async () => pendingProjectBuild());
+  assert.equal(document.querySelector(".build-progress-modal progress").value, 100);
+  await act(async () => button("Fechar").click());
   assert.equal(document.querySelector(".project-form"), null);
   assert.match(
     document.querySelector(".build-history").textContent,
@@ -689,16 +907,8 @@ test("projects browse local files, publish builds with comments and expose them 
       ),
     ].every((item) => !item.disabled),
   );
-  await go("Builds");
-  assert.match(
-    document.querySelector(".build-history").textContent,
-    /Projeto X/,
-  );
-  assert.match(
-    document.querySelector(".build-history").textContent,
-    /build-06-11-v1/,
-  );
-  await act(async () => button("Projeto X").click());
+  await go("Home");
+  await go("Projetos");
   assert.equal(document.querySelector("h1").textContent, "Projetos");
   assert.match(
     document.querySelector(".repository-header").textContent,
@@ -731,6 +941,33 @@ test("projects browse local files, publish builds with comments and expose them 
     pm2ConfigContent: "",
   });
   await go("Home");
+});
+
+test("publication modal waits for server cancellation and keeps PM2 failures visible", async () => {
+  await go("Projetos");
+  const projectButton = text => [...document.querySelectorAll("main button")].find(button => button.textContent.trim() === text);
+  await act(async () => projectButton("Todos os projetos").click());
+  await act(async () => projectButton("Projeto X").click());
+  await act(async () => document.querySelector("#project-tab-builds").click());
+  const publish = () => document.querySelector('.build-history button[aria-label^="Publicar "]');
+  const modalButton = text => [...document.querySelectorAll('.build-progress-modal button')].find(button => button.textContent.trim() === text);
+  await act(async () => publish().click());
+  await act(async () => buildStreams.at(-1).emit("progress", { id: "operation-1", percent: 60, stage: "Copying", status: "running", cancellable: true, logs: ["Package received"] }));
+  await act(async () => modalButton("Cancelar build").click());
+  assert.ok(requests.some(request => request.url.endsWith("/operation-1/cancel")));
+  assert.equal(document.querySelector('.build-progress-modal button').disabled, true);
+  assert.ok([...document.querySelectorAll('nav[aria-label] button')].some(button => button.disabled));
+  await act(async () => pendingPublication(409, "Cancelled; files restored"));
+  assert.equal(document.querySelector('.build-progress-modal pre'), null);
+  await act(async () => modalButton("Fechar").click());
+  await act(async () => publish().click());
+  await act(async () => buildStreams.at(-1).emit("progress", { id: "operation-1", percent: 85, stage: "PM2", status: "running", cancellable: false, logs: [] }));
+  assert.equal(modalButton("Cancelar build").disabled, true);
+  await act(async () => pendingPublication(502, "Script not found: <script>main.js</script>"));
+  assert.ok(document.querySelector('.build-progress-modal[open]'));
+  assert.match(document.querySelector('.build-progress-modal pre').textContent, /Script not found/);
+  assert.equal(document.querySelector('.build-progress-modal script'), null);
+  await act(async () => modalButton("Fechar").click());
 });
 
 test("Home list and cards show plain port numbers without access links", async () => {
@@ -811,8 +1048,8 @@ test("English and Spanish translate navigation, settings and projects without lo
   };
   const streamCount = streams.length;
   await selectLanguage("en");
-  await go('Home');
-  await go('Settings');
+  await go("Home");
+  await go("Settings");
   assert.equal(document.documentElement.lang, "en");
   assert.equal(window.localStorage.getItem("monitor-pm2:locale"), "en");
   assert.equal(document.querySelector("h1").textContent, "Settings");
@@ -824,8 +1061,8 @@ test("English and Spanish translate navigation, settings and projects without lo
   assert.match(document.querySelector("main").textContent, /Create new build/);
   await go("Settings");
   await selectLanguage("es");
-  await go('Inicio');
-  await go('Configuración');
+  await go("Inicio");
+  await go("Configuración");
   assert.equal(document.documentElement.lang, "es");
   assert.equal(document.querySelector("h1").textContent, "Configuración");
   await go("Proyectos");
@@ -843,6 +1080,8 @@ test("project editing saves changes and deletion requires the project name while
     [...document.querySelectorAll("main button")].find(
       (node) => node.textContent.trim() === label,
     );
+  await act(async () => button("Todos os projetos").click());
+  await act(async () => button("Projeto Y").click());
   await act(async () => button("Editar projeto").click());
   const form = document.querySelector(".project-details .project-form");
   assert.equal(form.querySelector('[name="name"]').value, "Projeto Y");
@@ -945,7 +1184,7 @@ test("regular users can open settings but cannot see or fetch user administratio
   assert.ok(document.querySelector(".retention-form"));
   assert.equal(
     [...document.querySelectorAll("button")].some(
-      (button) => button.textContent.trim() === "Acessar usuários",
+      (button) => button.textContent.trim() === "Usuários",
     ),
     false,
   );
@@ -961,7 +1200,7 @@ test("regular users can open settings but cannot see or fetch user administratio
   await go("Configurações");
   assert.ok(
     [...document.querySelectorAll("button")].some(
-      (button) => button.textContent.trim() === "Acessar usuários",
+      (button) => button.textContent.trim() === "Usuários",
     ),
   );
   await go("Home");
@@ -981,8 +1220,8 @@ test("an authenticated user can still navigate when PM2 cannot be reached", asyn
     document.querySelector(".overview-metrics").textContent,
     /Indisponível/,
   );
-  await go("Builds");
-  assert.ok(document.querySelector('[aria-label="Histórico de builds"]'));
+  await go("Projetos");
+  assert.ok(document.querySelector(".project-grid"));
   // A falha no primeiro carregamento tambem deve deixar a navegacao acessivel.
   await act(async () =>
     root.render(createElement(App, { key: "initial-pm2-outage" })),

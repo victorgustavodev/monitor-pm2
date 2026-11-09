@@ -3,7 +3,6 @@ import { RefreshCw, Globe, CircleUserRound } from "lucide-react";
 import { RetentionSettings } from "./components/RetentionSettings";
 import { getLocale, setLocale, type Locale } from "../../i18n";
 import { useEffect, useState } from "react";
-import { Management } from "../management/Management";
 
 export function Settings({
   autoRefresh,
@@ -11,61 +10,20 @@ export function Settings({
   username,
   onBusyChange,
   onSessionExpired,
-  isAdmin,
 }: {
   autoRefresh: boolean;
   onAutoRefreshChange: (enabled: boolean) => void;
   username: string;
   onBusyChange: (busy: boolean) => void;
   onSessionExpired: () => void;
-  isAdmin: boolean;
 }) {
-  const [panel, setPanel] = useState<"general" | "users">("general");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     onBusyChange(busy);
     return () => onBusyChange(false);
   }, [busy, onBusyChange]);
-  if (panel === "users" && isAdmin)
-    return (
-      <div className="settings-content">
-        <button
-          className="project-back"
-          disabled={busy}
-          onClick={() => setPanel("general")}
-        >
-          {t("Voltar às configurações")}
-        </button>
-        <Management
-          panel="users"
-          onStarted={async () => {}}
-          onSessionExpired={onSessionExpired}
-          onBusyChange={setBusy}
-        />
-      </div>
-    );
   return (
     <div className="settings-content">
-      {isAdmin && (
-        <section className="settings-card">
-          <div className="settings-icon">
-            <CircleUserRound size={21} aria-hidden="true" />
-          </div>
-          <h2>{t("Usuários")}</h2>
-          <p>
-            {t(
-              "Gerencie os usuários e seus perfis de acesso. Disponível apenas para administradores.",
-            )}
-          </p>
-          <button
-            className="project-button secondary settings-users-button"
-            disabled={busy}
-            onClick={() => setPanel("users")}
-          >
-            {t("Acessar usuários")}
-          </button>
-        </section>
-      )}
       <section className="settings-card">
         <div className="settings-icon">
           <Globe size={21} aria-hidden="true" />

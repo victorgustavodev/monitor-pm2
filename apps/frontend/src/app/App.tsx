@@ -1,3 +1,5 @@
+import { ProcessProjectDialog } from "../features/processes/components/ProcessProjectDialog";
+import type { ProcessProjectLink } from "../features/processes/processes";
 import { dateLocale } from "../i18n";
 import { t } from "../i18n";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -14,9 +16,12 @@ import { Home } from "../features/home/Home";
 import { Applications } from "../features/processes/Applications";
 import { Settings } from "../features/settings/Settings";
 import { Projects } from "../features/projects/Projects";
-import { Builds } from "../features/projects/Builds";
 import { useLocale } from "../i18n";
-import type { Process, ProcessAction } from "../features/processes/processes";
+import {
+  mergeProcessLabels,
+  type Process,
+  type ProcessAction,
+} from "../features/processes/processes";
 
 export function App() {
   useLocale();
@@ -37,6 +42,9 @@ export function App() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
+  const [linkProcess, setLinkProcess] = useState<Process | null>(null);
+  const [projectSaving, setProjectSaving] = useState(false);
+  const [labelSaving, setLabelSaving] = useState(false);
   const processDialog = useRef<HTMLDialogElement>(null);
   const [processError, setProcessError] = useState("");
   const [ecosystemPath, setEcosystemPath] = useState("");
@@ -52,7 +60,7 @@ export function App() {
     try {
       setLoading(true);
       const rows = await api<Process[]>("/api/processes");
-      setProcesses(rows);
+      setProcesses((current) => mergeProcessLabels(rows, current));
       setConnected(true);
       setUpdatedAt(new Date());
       setError("");
@@ -94,9 +102,10 @@ export function App() {
       stream = new EventSource("/api/processes/stream");
       stream.addEventListener("processes", (event) => {
         if (!active) return;
-        setProcesses(
-          JSON.parse((event as MessageEvent<string>).data) as Process[],
-        );
+        const rows = JSON.parse(
+          (event as MessageEvent<string>).data,
+        ) as Process[];
+        setProcesses((current) => mergeProcessLabels(rows, current));
         setConnected(true);
         setUpdatedAt(new Date());
         setLoading(false);
@@ -158,6 +167,7 @@ export function App() {
     setUsername(session.username);
     setRole(session.role === "admin" ? "admin" : "user");
     setView("home");
+    setLinkProcess(null);
     setAuthenticated(true);
     await load();
   }
@@ -178,6 +188,68 @@ export function App() {
     } finally {
       setBusy(null);
     }
+  }
+  async function saveLabel(process: Process, label: string) {
+    setBusy(process.id);
+    setLabelSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const saved = await api<{
+        name: string;
+        namespace: string;
+        label: string;
+        labelUpdatedAt: string;
+      }>(`/api/processes/${process.id}/label`, {
+        method: "PUT",
+        body: JSON.stringify({
+          label,
+          name: process.name,
+          namespace: process.namespace || "default",
+        }),
+      });
+      setProcesses((rows) =>
+        rows.map((row) =>
+          row.name === saved.name &&
+          (row.namespace || "default") === saved.namespace
+            ? {
+                ...row,
+                label: saved.label,
+                labelUpdatedAt: saved.labelUpdatedAt,
+              }
+            : row,
+        ),
+      );
+      setNotice(t("Nome de exibição salvo."));
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 401)
+        setAuthenticated(false);
+      throw reason;
+    } finally {
+      setBusy(null);
+      setLabelSaving(false);
+    }
+  }
+  async function saveProject(process: Process, projectId: string | null) {
+    if (busy !== null) return;
+    setBusy(process.id);
+    setProjectSaving(true);
+    setNotice("");
+    try {
+      const saved = await api<ProcessProjectLink>(`/api/processes/${process.id}/project`, {
+        method: "PUT", body: JSON.stringify({ projectId, name: process.name, namespace: process.namespace || "default" }),
+      });
+      setProcesses(rows => rows.map(row => row.name === saved.name && (row.namespace || "default") === saved.namespace
+        ? { ...row, ...saved } : row));
+      setNotice(t("Vínculo do projeto salvo."));
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 401) setAuthenticated(false);
+      throw reason;
+    } finally { setBusy(null); setProjectSaving(false); }
+  }
+  function openProject(id: string) {
+    setSelectedProjectId(id);
+    setView("projects");
   }
   async function showLogs(process: Process) {
     setBusy(process.id);
@@ -254,7 +326,7 @@ export function App() {
   }
 
   const currentView = dashboardViews.find((item) => item.id === view)!;
-  const managementPanel = view === "logs" ? view : null;
+  const managementPanel = view === "logs" || (view === "users" && role === "admin") ? view : null;
 
   if (authenticated === null)
     return (
@@ -269,18 +341,23 @@ export function App() {
         {t("Ir para o conteúdo")}
       </a>
       <Sidebar
+        isAdmin={role === "admin"}
         view={view}
         onNavigate={setView}
         username={username}
         count={processes.length}
-        busy={managementBusy || loggingOut}
+        busy={managementBusy || loggingOut || labelSaving || projectSaving || addingProcess || pickingFile}
         onLogout={logout}
       />
       <main id="dashboard-main" className="dashboard-content" tabIndex={-1}>
         <header className="dashboard-page-header">
           <div>
             <p className="page-eyebrow">MONITOR PM2</p>
-            <h1>{view === 'home' ? t('Olá, {0}', { 0: username }) : t(currentView.label)}</h1>
+            <h1>
+              {view === "home"
+                ? t("Olá, {0}", { 0: username })
+                : t(currentView.label)}
+            </h1>
             <p className="page-description">{t(currentView.description)}</p>
           </div>
           <div className="page-actions">
@@ -302,6 +379,7 @@ export function App() {
             {view === "home" && (
               <button
                 type="button"
+                disabled={busy !== null}
                 onClick={openAddProcess}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-action px-4 py-2.5 text-sm font-semibold text-on-action hover:bg-action-hover"
               >
@@ -357,6 +435,9 @@ export function App() {
         {view === "home" && (
           <Home processes={processes} connected={connected} loading={loading}>
             <Applications
+              onProjectEdit={setLinkProcess}
+              onOpenProject={openProject}
+              onLabelSave={saveLabel}
               processes={processes}
               query={query}
               onQueryChange={setQuery}
@@ -372,7 +453,6 @@ export function App() {
           <Management
             key={managementPanel}
             panel={managementPanel}
-            onStarted={load}
             onSessionExpired={sessionExpired}
             onBusyChange={setManagementBusy}
           />
@@ -386,20 +466,8 @@ export function App() {
             onBusyChange={setManagementBusy}
           />
         )}
-        {view === "builds" && (
-          <Builds
-            onStarted={load}
-            onSessionExpired={sessionExpired}
-            onBusyChange={setManagementBusy}
-            onOpenProject={(id) => {
-              setSelectedProjectId(id);
-              setView("projects");
-            }}
-          />
-        )}
         {view === "settings" && (
           <Settings
-            isAdmin={role === "admin"}
             onBusyChange={setManagementBusy}
             onSessionExpired={sessionExpired}
             autoRefresh={autoRefresh}
@@ -408,6 +476,8 @@ export function App() {
           />
         )}
       </main>
+      {linkProcess && <ProcessProjectDialog process={linkProcess} busy={projectSaving}
+        onSave={saveProject} onClose={() => setLinkProcess(null)} onSessionExpired={sessionExpired} />}
       <dialog
         ref={processDialog}
         aria-labelledby="add-process-title"

@@ -1,3 +1,5 @@
+import { useBuildPublication } from "../useBuildPublication";
+import { BuildProgressModal } from "./BuildProgressModal";
 import { t } from "../../../i18n";
 import { useEffect, useState } from "react";
 import { Download, Package, Play, RefreshCw } from "lucide-react";
@@ -25,16 +27,15 @@ export function BuildHistory({
   onBusyChange,
   onPublished,
   onSessionExpired,
-  onOpenProject,
 }: {
-  projectId?: string;
+  projectId: string;
   revision?: number;
   disabled?: boolean;
   onBusyChange: (busy: boolean) => void;
   onPublished: () => Promise<void>;
   onSessionExpired: () => void;
-  onOpenProject?: (id: string) => void;
 }) {
+  const publication = useBuildPublication();
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<BuildPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,9 +52,7 @@ export function BuildHistory({
   }, [projectId, revision]);
   useEffect(() => {
     const controller = new AbortController();
-    const url = projectId
-      ? `/api/projects/${projectId}/builds?page=${page}`
-      : `/api/builds?page=${page}`;
+    const url = `/api/projects/${projectId}/builds?page=${page}`;
     setLoading(true);
     void api<BuildPage>(url, { signal: controller.signal })
       .then((data) => {
@@ -80,9 +79,7 @@ export function BuildHistory({
     setError("");
     setNotice("");
     try {
-      await api(`/api/projects/${build.projectId}/builds/${build._id}/deploy`, {
-        method: "POST",
-      });
+      await publication.run(build.projectId, `/api/projects/${build.projectId}/builds/${build._id}/deploy`);
       setNotice(
         t("{0} publicado. A aplicação foi enviada ao PM2.", { 0: build.name }),
       );
@@ -103,6 +100,7 @@ export function BuildHistory({
   const locked = disabled || Boolean(busy);
   return (
     <section className="build-history" aria-label={t("Histórico de builds")}>
+      <BuildProgressModal publication={publication} />
       <div className="project-section-heading">
         <div>
           <h2>{t("Histórico de builds")}</h2>
@@ -167,15 +165,7 @@ export function BuildHistory({
                         <strong>{build.name}</strong>
                         <span>#{build.number}</span>
                       </div>
-                      {!projectId && (
-                        <button
-                          className="project-text-link"
-                          onClick={() => onOpenProject?.(build.projectId)}
-                          disabled={locked}
-                        >
-                          {build.projectName}
-                        </button>
-                      )}
+
                       <p className="build-comments">{build.comments}</p>
                       <small>
                         {build.originalName} · {fileSize(build.size)}

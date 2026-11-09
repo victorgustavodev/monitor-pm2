@@ -1210,3 +1210,48 @@ test("optional process termination requires the confirmed revision and keeps the
     "application files",
   );
 });
+
+test("publication endpoints stream stages, cancel file changes and preserve failure diagnostics", async () => {
+  if (!cookie) {
+    const login = await post("/api/auth/login", { username: "admin", password: process.env.ADMIN_PASSWORD });
+    cookie = login.headers.get("set-cookie").split(";")[0];
+  }
+  const item = await json(await post("/api/projects", { name: "Progress test", rootPath: resolve(directory, "apps/progress") }), 201);
+  const { getBuildOperation, cancelBuildOperation } = require("../dist/projects/build-progress");
+  const start = async () => json(await post(`/api/projects/${item._id}/build-operations`), 201);
+  const send = (operation, name) => {
+    const form = new FormData();
+    form.set("name", name); form.set("comments", "Progress test");
+    form.set("build", new Blob([zip(packageFiles(name))]), "release.zip");
+    return request(`/api/projects/${item._id}/builds?operationId=${operation.id}`, { method: "POST", body: form });
+  };
+  const cancelled = await start();
+  const op = getBuildOperation(cancelled.id, item._id, "admin");
+  op.events.on("progress", () => {
+    if (op.state.percent > 60 && op.state.cancellable) cancelBuildOperation(op);
+  });
+  const cancelledResult = await json(await send(cancelled, "cancelled"), 409);
+  assert.match(cancelledResult.message, /cancelada.*restaurados/);
+  assert.equal(op.state.status, "cancelled");
+  await assert.rejects(readFile(resolve(item.rootPath, "ecosystem.config.js")), { code: "ENOENT" });
+  await assert.rejects(readFile(resolve(item.rootPath, "dist/main.js")), { code: "ENOENT" });
+
+  const success = await start();
+  const stream = await request(`/api/projects/${item._id}/build-operations/${success.id}/stream`, { headers: { "accept-encoding": "gzip" } });
+  assert.equal(stream.headers.get("content-encoding"), null);
+  const reader = stream.body.getReader();
+  assert.match(new TextDecoder().decode((await reader.read()).value), /event: progress/);
+  await reader.cancel();
+  const published = await json(await send(success, "success"), 201);
+  assert.equal(getBuildOperation(success.id, item._id, "admin").state.percent, 100);
+  assert.equal(published.status, "deployed");
+
+  const failure = await start();
+  failDeployment = true;
+  try {
+    await json(await post(`/api/projects/${item._id}/builds/${published._id}/deploy?operationId=${failure.id}`), 502);
+    const state = getBuildOperation(failure.id, item._id, "admin").state;
+    assert.equal(state.status, "failed");
+    assert.match(state.logs.join("\n"), /Falha simulada no PM2.*restaurados/);
+  } finally { failDeployment = false; }
+});

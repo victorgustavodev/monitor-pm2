@@ -1,8 +1,9 @@
+import { useState } from "react";
 import { t } from "../../i18n";
 import {
   LayoutDashboard,
   History,
-  Package,
+  ChevronDown,
   Settings,
   LogOut,
   CircleUserRound,
@@ -11,7 +12,7 @@ import {
 import Logo from "../../assets/logo.png";
 
 export type DashboardView =
-  "home" | "projects" | "logs" | "builds" | "settings";
+  "home" | "projects" | "logs" | "users" | "settings";
 
 export const dashboardViews = [
   {
@@ -34,11 +35,10 @@ export const dashboardViews = [
     icon: History,
   },
   {
-    id: "builds",
-    label: "Builds",
-    description:
-      "Organize as versões e publique os builds das suas aplicações.",
-    icon: Package,
+    id: "users",
+    label: "Usuários",
+    description: "Gerencie os usuários e seus perfis de acesso.",
+    icon: CircleUserRound,
   },
   {
     id: "settings",
@@ -55,6 +55,7 @@ export function Sidebar({
   count,
   busy,
   onLogout,
+  isAdmin,
 }: {
   view: DashboardView;
   onNavigate: (view: DashboardView) => void;
@@ -62,7 +63,9 @@ export function Sidebar({
   count: number;
   busy: boolean;
   onLogout: () => void;
+  isAdmin: boolean;
 }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   return (
     <aside className="dashboard-sidebar" aria-label={t("Menu do monitor")}>
       <div className="sidebar-brand">
@@ -80,7 +83,7 @@ export function Sidebar({
       </div>
       <p className="sidebar-label">{t("Navegação")}</p>
       <nav className="sidebar-nav" aria-label={t("Navegação principal")}>
-        {dashboardViews.map(({ id, label, icon: Icon }) => (
+        {dashboardViews.filter(item => item.id === "home" || item.id === "projects").map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
@@ -94,6 +97,24 @@ export function Sidebar({
             {id === "home" && <span className="sidebar-count">{count}</span>}
           </button>
         ))}
+        <div className="sidebar-settings">
+          <button type="button" className="sidebar-link" disabled={busy}
+            aria-expanded={settingsOpen} aria-controls="sidebar-settings-menu"
+            onClick={() => setSettingsOpen(open => !open)}>
+            <Settings size={19} aria-hidden="true" />
+            <span>{t("Configurações")}</span>
+            <ChevronDown size={16} className={settingsOpen ? "sidebar-chevron expanded" : "sidebar-chevron"} aria-hidden="true" />
+          </button>
+          {settingsOpen && <div id="sidebar-settings-menu" className="sidebar-submenu">
+            {dashboardViews.filter(item => item.id === "settings" || item.id === "logs" || (item.id === "users" && isAdmin)).map(({ id, label, icon: Icon }) => (
+              <button key={id} type="button" className="sidebar-link" disabled={busy}
+                aria-current={view === id ? "page" : undefined} onClick={() => onNavigate(id)}>
+                <Icon size={17} aria-hidden="true" />
+                <span>{t(id === "settings" ? "Geral" : label)}</span>
+              </button>
+            ))}
+          </div>}
+        </div>
       </nav>
       <div className="sidebar-footer">
         <div className="sidebar-account">

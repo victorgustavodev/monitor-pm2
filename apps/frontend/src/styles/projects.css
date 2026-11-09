@@ -676,3 +676,29 @@
   tab-size: 2;
   min-height: 200px;
 }
+.build-progress-modal {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  margin: auto;
+  padding: 28px;
+  border: 1px solid var(--ds-color-line);
+  border-radius: 16px;
+  color: var(--ds-color-content);
+  background: var(--ds-color-surface);
+  box-shadow: var(--ds-shadow-dialog);
+}
+.build-progress-modal::backdrop { background: var(--ds-color-overlay); }
+.build-progress-modal h2 { margin: 0 0 16px; color: var(--ds-color-heading); font-size: 20px; }
+.build-progress-modal > p { margin-block: 12px; }
+.build-progress-modal > strong, .build-progress-modal > small { display: block; text-align: center; margin-top: 10px; }
+.build-progress-modal > small { color: var(--ds-color-muted); }
+.build-progress-modal progress { display: block; appearance: none; width: 100%; height: 14px; border: 0; border-radius: 20px; overflow: hidden; background: var(--ds-color-subtle); }
+.build-progress-modal progress::-webkit-progress-bar { background: var(--ds-color-subtle); }
+.build-progress-modal progress::-webkit-progress-value { background: var(--ds-color-success); border-radius: 20px; transition: width .2s; }
+.build-progress-modal progress::-moz-progress-bar { background: var(--ds-color-success); }
+.build-progress-modal details { margin-top: 24px; }
+.build-progress-modal summary { cursor: pointer; }
+.build-progress-modal pre { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--ds-color-subtle); border-radius: 8px; font-size: 12px; }
+.build-progress-actions { display: flex; justify-content: flex-end; margin-top: 24px; }
+@media (prefers-reduced-motion: reduce) { .build-progress-modal progress::-webkit-progress-value { transition: none; } }

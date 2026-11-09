@@ -5,6 +5,7 @@ export type Pm2Row = {
   monit?: { cpu?: number; memory?: number };
   pm2_env?: {
     status?: string;
+    namespace?: string;
     pm_uptime?: number;
     restart_time?: number;
     exec_mode?: string;

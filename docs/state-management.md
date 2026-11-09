@@ -19,6 +19,8 @@ Hooks reutilizáveis por **features distintas** ficam em `src/hooks/`. Hooks esp
 
 ## Fonte única de verdade
 
+Nomes de exibição dos processos chegam junto aos dados de consulta e SSE. Após salvar, a resposta atualiza a mesma coleção de processos usada por lista e cards; a busca considera nome técnico e de exibição. `mergeProcessLabels` preserva um nome com `labelUpdatedAt` mais recente quando chega uma coleta antiga, sem reaplicar o nome a outro processo que reutilizou o ID. A remoção mantém um registro com nome vazio e data para também impedir que um evento antigo restaure o valor removido. O rascunho do editor é local e não é sobrescrito durante a digitação por atualizações de métricas.
+
 - Derive contadores, filtros e visões da mesma coleção de dados quando possível.
 - Lista e Cards devem receber os mesmos dados filtrados; alternar apresentação não deve refazer regras de busca por caminhos divergentes.
 - Evite armazenar o mesmo processo independentemente em múltiplos contextos.
@@ -67,3 +69,7 @@ O idioma usa `monitor-pm2:locale` (`pt-BR`, `en`, `es`) e uma assinatura `useSyn
 - Coloque a transformação de dados repetida em hooks, services ou utilitários apropriados, sem criar estados derivados redundantes.
 
 Veja `api-integration.md` para erros e contratos HTTP e `components.md` para separar estado/apresentação.
+
+## Estado do vínculo de projeto
+
+A associação chega na mesma lista e no mesmo SSE que as métricas, sem polling adicional. O editor mantém seleção local e consulta o catálogo ao abrir. Após salvar, a resposta atualiza todas as instâncias da mesma identidade, inclusive com atualização ao vivo pausada. `mergeProcessLabels` também preserva vínculos contra snapshots anteriores à gravação; compara `projectUpdatedAt` e `projectObservedAt`. Uma coleta mais recente pode remover associações após exclusão de projeto ou mudança de pasta, mesmo sem um metadado explícito para aquele processo. A identificação inclui nome e namespace para não reaproveitar dados de outro processo com o mesmo ID.

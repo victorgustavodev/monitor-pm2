@@ -4,6 +4,7 @@ import { MongoServerError, ObjectId, type WithId } from "mongodb";
 import {
   projects,
   projectBuilds,
+  processProjects,
   type ProjectRecord,
 } from "../common/database";
 import { HttpError } from "../common/http-error";
@@ -215,7 +216,7 @@ export async function projectDeletionPreview(rawId: unknown) {
   const project = await projects.findOne({ _id: projectId(rawId) });
   if (!project) throw new HttpError(404, "Projeto não encontrado.");
   assertEditable(project);
-  return getProjectProcesses(project.rootPath);
+  return getProjectProcesses(project.rootPath, project._id.toHexString());
 }
 
 export async function deleteProject(
@@ -236,7 +237,7 @@ export async function deleteProject(
       "Confira os processos vinculados antes de confirmar a exclusão.",
     );
   const id = projectId(rawId);
-  return withArtifactAccess(() =>
+  return withArtifactAccess(() => withProjectConfiguration(() =>
     withProjectOperation(id, async () => {
       // Include a tombstone so an interrupted deletion can be retried.
       const project = await projects.findOne({ _id: id });
@@ -269,11 +270,15 @@ export async function deleteProject(
         await stopProjectProcesses(
           project.rootPath,
           options.processRevision as string,
+          id.toHexString(),
         );
       await projects.updateOne({ _id: id }, { $set: { deleting: true } });
       await rm(folder, { recursive: true, force: true });
       await projectBuilds.deleteMany({ projectId: id });
+      await processProjects.updateMany({ projectId: id }, {
+        $set: { projectId: null, updatedAt: new Date() },
+      });
       await projects.deleteOne({ _id: id });
     }),
-  );
+  ));
 }

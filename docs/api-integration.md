@@ -88,7 +88,9 @@ Tratamento visual e acessibilidade ficam nos componentes; tradução de falhas t
 
 ### Contratos implementados de configurações e portas
 
-- `GET /api/auth/me` inclui `role: "admin" | "user"`, consultado do banco. `GET /api/users` e `POST /api/users` exigem `admin` no backend; no frontend, o acesso fica em Configurações. A criação aceita `role` opcional, com padrão `user`.
+- `GET /api/processes` e o SSE retornam `namespace`, `label` e `labelUpdatedAt` junto às métricas. `PUT /api/processes/:id/label` recebe `{ name, namespace, label }`, exige sessão e confirma nome/namespace contra o processo atual antes de salvar. Aceita até 80 caracteres sem controles/quebras de linha; string vazia remove o nome de exibição. Retorna `{ name, namespace, label, labelUpdatedAt }`. Não chama `pm2 rename`, restart ou save. IDs reaproveitados com outra identidade retornam 409; um ID inexistente retorna 404.
+
+- `GET /api/auth/me` inclui `role: "admin" | "user"`, consultado do banco. `GET /api/users` e `POST /api/users` exigem `admin` no backend; no frontend, o acesso fica no submenu Configurações → Usuários da sidebar. A criação aceita `role` opcional, com padrão `user`.
 - `GET /api/projects/:id/deletion-preview` retorna os processos vinculados à pasta atual e uma revisão. A confirmação de exclusão envia `stopProcesses` e `processRevision`; a opção de parar começa desmarcada. Uma revisão desatualizada retorna 409 e exige nova confirmação. Parar conserva a entrada no PM2.
 
 - `GET /api/settings/retention` retorna `enabled`, `retentionDays`, `intervalHours`, `nextRunAt` e, após execução, `lastRunAt`, `lastDeleted` e eventual `lastError`.
@@ -104,3 +106,14 @@ Tratamento visual e acessibilidade ficam nos componentes; tradução de falhas t
 - [ ] Não dupliquei chamadas em componentes de apresentação.
 - [ ] Revalidação e polling não geram inconsistência.
 - [ ] Testes relevantes e documentação foram atualizados.
+## Progresso de publicação
+
+O cliente cria uma operação com `POST /api/projects/:id/build-operations`, acompanha snapshots via SSE em `GET /api/projects/:id/build-operations/:operationId/stream` e envia `operationId` como query no POST de upload/publicação existente. Os endpoints antigos continuam síncronos e compatíveis. A operação é restrita ao projeto e ao usuário autenticado; snapshots incluem etapa, percentual, logs e disponibilidade de cancelamento. O percentual indica marcos das etapas, não estimativa de tempo ou bytes enviados.
+
+`POST /api/projects/:id/build-operations/:operationId/cancel` solicita cancelamento. Extração termina o worker, validação/cópia verifica AbortSignal e alterações são restauradas pelo journal antes de liberar a operação. Ao iniciar o PM2, cancelamento é bloqueado (409) para evitar interrupção de uma troca de processos. O POST original só termina após publicação ou recuperação; fechar o SSE não cancela o servidor. Operações ficam em memória; reinício encerra conexões e usa a recuperação persistente já existente para builds interrompidos.
+
+## Vínculos de processos
+
+`GET /api/processes` e o SSE incluem `projectId`, `projectName`, `projectUpdatedAt` (nulos se ausentes) e `projectObservedAt` (data da consulta dos vínculos). `PUT /api/processes/:id/project` exige sessão e recebe `{ name, namespace, projectId }`, com ID de projeto válido ou `null` para remover o vínculo. Retorna `{ name, namespace, projectId, projectName, projectUpdatedAt }`. Valida a identidade atual contra o PM2; ID inexistente retorna 404, identidade desatualizada retorna 409, projeto inexistente retorna 404 e projeto em exclusão/recuperação retorna 409. Não altera processos no daemon.
+
+As APIs legadas de versões e histórico global continuam disponíveis por compatibilidade; a interface usa somente builds vinculados a projetos.

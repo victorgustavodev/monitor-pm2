@@ -3,20 +3,7 @@ import { t } from "../../i18n";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../services/api";
 
-export type ManagementPanel = "versions" | "users" | "logs";
-type Version = {
-  _id: string;
-  project: string;
-  version: string;
-  originalName: string;
-  size: number;
-  createdAt: string;
-  createdBy: string;
-  ecosystem?: string;
-  status: string;
-  error?: string;
-  startedAt?: string;
-};
+export type ManagementPanel = "users" | "logs";
 type User = {
   id: string;
   username: string;
@@ -42,27 +29,15 @@ const inputStyle =
 const buttonStyle =
   "rounded-lg bg-action px-4 py-2 text-sm font-semibold text-on-action hover:bg-action-hover disabled:opacity-50";
 const date = (value: string) => new Date(value).toLocaleString(dateLocale());
-const statuses: Record<string, string> = {
-  processing: "Extraindo",
-  ready: "Salva",
-  starting: "Iniciando",
-  started: "Iniciada",
-  failed: "Falha",
-  deleting: "Excluindo",
-};
-
 export function Management({
   panel,
-  onStarted,
   onSessionExpired,
   onBusyChange,
 }: {
   panel: ManagementPanel;
-  onStarted: () => Promise<void>;
   onSessionExpired: () => void;
   onBusyChange: (busy: boolean) => void;
 }) {
-  const [versions, setVersions] = useState<Version[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [kind, setKind] = useState("audit");
@@ -95,8 +70,6 @@ export function Management({
     setLoading(true);
     setError("");
     try {
-      if (panel === "versions")
-        setVersions(await api<Version[]>("/api/versions"));
       if (panel === "users") setUsers(await api<User[]>("/api/users"));
       if (panel === "logs") {
         const query = new URLSearchParams({ kind, limit: "100" });
@@ -122,14 +95,6 @@ export function Management({
     setError("");
     setNotice("");
     try {
-      if (panel === "versions") {
-        await api("/api/versions", { method: "POST", body: data });
-        setNotice(
-          t(
-            "Build salvo e versionado. Você já pode baixar o arquivo original ou iniciar a versão.",
-          ),
-        );
-      } else {
         await api("/api/users", {
           method: "POST",
           body: JSON.stringify({
@@ -139,36 +104,9 @@ export function Management({
           }),
         });
         setNotice(t("Usuário criado. Ele já pode entrar no painel."));
-      }
       form.reset();
       await load();
     } catch (reason) {
-      fail(reason);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function start(version: Version) {
-    if (
-      !window.confirm(
-        t(
-          "Iniciar {0} {1}? Os processos com os mesmos nomes no PM2 serão atualizados para este build.",
-          { 0: version.project, 1: version.version },
-        ),
-      )
-    )
-      return;
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await api(`/api/versions/${version._id}/start`, { method: "POST" });
-      setNotice(t("Versão {0} enviada ao PM2.", { 0: version.version }));
-      await onStarted();
-      await load();
-    } catch (reason) {
-      await load();
       fail(reason);
     } finally {
       setBusy(false);
@@ -183,9 +121,7 @@ export function Management({
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="font-semibold">
-            {panel === "versions"
-              ? t("Builds versionados")
-              : panel === "users"
+            {panel === "users"
                 ? t("Usuários do painel")
                 : t("Logs salvos")}
           </h2>
@@ -213,137 +149,6 @@ export function Management({
           >
             {notice}
           </p>
-        )}
-        {panel === "versions" && (
-          <>
-            <p className="mb-4 text-sm text-muted">
-              {t(
-                "Envie o build pronto em ZIP, RAR, 7z, TAR, TAR.GZ, TAR.BZ2 ou TAR.XZ. Cada versão preserva o arquivo original. Para iniciar pelo painel, inclua um ecosystem.config.js com caminhos relativos ao build.",
-              )}
-            </p>
-            <form
-              onSubmit={submit}
-              className="mb-5 flex flex-wrap items-end gap-3"
-            >
-              <label className="min-w-40 flex-1 text-sm">
-                {t("Projeto")}
-                <input
-                  name="project"
-                  required
-                  maxLength={80}
-                  pattern="[a-zA-Z0-9][a-zA-Z0-9._\-]*"
-                  placeholder="minha-app"
-                  disabled={busy}
-                  className={inputStyle}
-                />
-              </label>
-              <label className="min-w-32 flex-1 text-sm">
-                {t("Versão")}
-                <input
-                  name="version"
-                  required
-                  maxLength={80}
-                  pattern="[a-zA-Z0-9][a-zA-Z0-9._\-]*"
-                  placeholder="1.0.0"
-                  disabled={busy}
-                  className={inputStyle}
-                />
-              </label>
-              <label className="min-w-52 flex-1 text-sm">
-                {t("Build compactado")}
-                <input
-                  name="build"
-                  type="file"
-                  accept=".zip,.rar,.7z,.tar,.tar.gz,.tgz,.tar.bz2,.tbz2,.tbz,.tar.xz,.txz"
-                  required
-                  disabled={busy}
-                  className={inputStyle}
-                />
-              </label>
-              <button disabled={busy} className={buttonStyle}>
-                {busy ? t("Salvando…") : t("Salvar versão")}
-              </button>
-            </form>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[650px] text-left text-sm">
-                <thead className="bg-canvas text-muted">
-                  <tr>
-                    <th className="p-3">{t("Projeto / versão")}</th>
-                    <th>{t("Enviado por")}</th>
-                    <th>{t("Data")}</th>
-                    <th>{t("Estado")}</th>
-                    <th className="text-right">{t("Ações")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {versions.map((version) => (
-                    <tr key={version._id} className="border-t border-line">
-                      <td className="p-3">
-                        <strong>
-                          {version.project} · {version.version}
-                        </strong>
-                        <p className="text-xs text-muted">
-                          {version.originalName} ·{" "}
-                          {(version.size / 1024 / 1024).toFixed(1)} MB
-                        </p>
-                        {version.error && (
-                          <p className="mt-1 max-w-xs text-xs text-danger">
-                            {version.error}
-                          </p>
-                        )}
-                      </td>
-                      <td>{version.createdBy}</td>
-                      <td>
-                        {date(version.createdAt)}
-                        {version.startedAt && (
-                          <p className="text-xs text-muted">
-                            {t("Última execução:")} {date(version.startedAt)}
-                          </p>
-                        )}
-                      </td>
-                      <td>{t(statuses[version.status] || version.status)}</td>
-                      <td className="py-3 text-right">
-                        {version.status !== "processing" && (
-                          <a
-                            className="mr-3 text-link hover:text-link-hover hover:underline"
-                            href={`/api/versions/${version._id}/archive`}
-                          >
-                            {t("Baixar original")}
-                          </a>
-                        )}
-                        <button
-                          type="button"
-                          className={buttonStyle}
-                          disabled={
-                            busy ||
-                            !version.ecosystem ||
-                            ["processing", "starting", "deleting"].includes(
-                              version.status,
-                            )
-                          }
-                          onClick={() => start(version)}
-                          title={
-                            version.ecosystem
-                              ? t("Iniciar esta versão no PM2")
-                              : t(
-                                  "Inclua exatamente um ecosystem.config.js no arquivo compactado para iniciar",
-                                )
-                          }
-                        >
-                          {t("Iniciar")}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {!loading && !versions.length && (
-              <p className="py-6 text-center text-sm text-muted">
-                {t("Nenhuma versão enviada.")}
-              </p>
-            )}
-          </>
         )}
         {panel === "users" && (
           <>

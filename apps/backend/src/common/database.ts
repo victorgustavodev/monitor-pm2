@@ -43,6 +43,25 @@ export interface LogCursor {
   identity: string;
 }
 
+export interface ProcessLabelRecord {
+  scope: string;
+  name: string;
+  namespace: string;
+  label: string;
+  createdAt: Date;
+  updatedAt: Date;
+  updatedBy: string;
+}
+
+export interface ProcessProjectRecord {
+  scope: string;
+  name: string;
+  namespace: string;
+  projectId: ObjectId | null;
+  updatedAt: Date;
+  updatedBy: string;
+}
+
 export interface ProjectRecord {
   name: string;
   nameKey: string;
@@ -91,6 +110,9 @@ const db = mongo.db(env.mongoDatabase);
 export const users = db.collection<UserRecord>("users");
 export const logs = db.collection<LogRecord>("logs");
 export const versions = db.collection<VersionRecord>("versions");
+export const processLabels =
+  db.collection<ProcessLabelRecord>("process_labels");
+export const processProjects = db.collection<ProcessProjectRecord>("process_projects");
 export const projects = db.collection<ProjectRecord>("projects");
 export const projectBuilds =
   db.collection<ProjectBuildRecord>("project_builds");
@@ -119,6 +141,12 @@ export async function connectDatabase() {
     logs.createIndex({ kind: 1, processId: 1, createdAt: -1 }),
     versions.createIndex({ project: 1, version: 1 }, { unique: true }),
     versions.createIndex({ createdAt: -1 }),
+    processLabels.createIndex(
+      { scope: 1, name: 1, namespace: 1 },
+      { unique: true },
+    ),
+    processProjects.createIndex({ scope: 1, name: 1, namespace: 1 }, { unique: true }),
+    processProjects.createIndex({ projectId: 1 }),
     projects.createIndex({ nameKey: 1 }, { unique: true }),
     projects.createIndex({ rootKey: 1 }, { unique: true }),
     projectBuilds.createIndex({ projectId: 1, nameKey: 1 }, { unique: true }),
