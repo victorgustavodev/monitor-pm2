@@ -1,4 +1,7 @@
 export const messages: Record<string, { en: string; es: string }> = {
+  "Manifesto do build ativo ausente. Arquivos antigos fora do novo pacote serão preservados.": { en: "The active build manifest is missing. Old files outside the new package will be preserved.", es: "Falta el manifiesto del build activo. Se conservarán los archivos antiguos que no estén en el nuevo paquete." },
+  "Não foi possível ler o manifesto do build ativo. Verifique o acesso ao armazenamento de versões.": { en: "Unable to read the active build manifest. Check access to version storage.", es: "No se pudo leer el manifiesto del build activo. Comprueba el acceso al almacenamiento de versiones." },
+  "O manifesto do build ativo está inválido. Restaure o manifesto a partir de uma cópia de segurança antes de publicar.": { en: "The active build manifest is invalid. Restore it from a backup before publishing.", es: "El manifiesto del build activo no es válido. Restáuralo desde una copia de seguridad antes de publicar." },
   "Arquivos .env": { en: ".env files", es: "Archivos .env" },
   "Edite ou crie arquivos .env na raiz do projeto. Salvar não reinicia a aplicação.": { en: "Edit or create .env files in the project root. Saving does not restart the application.", es: "Edita o crea archivos .env en la raíz del proyecto. Guardar no reinicia la aplicación." },
   "Nome do arquivo de ambiente": { en: "Environment file name", es: "Nombre del archivo de entorno" },

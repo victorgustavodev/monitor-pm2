@@ -94,6 +94,38 @@ export async function listProjectBuilds(rawProject: unknown, rawPage: unknown) {
   };
 }
 
+async function previousBuildFiles(
+  project: WithId<ProjectRecord>,
+  control?: BuildControl,
+): Promise<string[]> {
+  if (!project.activeBuildId) return [];
+  const manifest = await projectPath(
+    projectBuildFolder(project._id, project.activeBuildId),
+    "manifest.json",
+    true,
+  );
+  let content: string;
+  try {
+    content = await readFile(manifest, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      // Without the manifest, neither the source nor the live folder proves
+      // which files were installed. Preserve unknown files instead of deleting them.
+      control?.report(35, "Manifesto do build ativo ausente. Arquivos antigos fora do novo pacote serão preservados.");
+      return [];
+    }
+    throw new HttpError(409, "Não foi possível ler o manifesto do build ativo. Verifique o acesso ao armazenamento de versões.");
+  }
+  try {
+    const files: unknown = JSON.parse(content);
+    if (!Array.isArray(files) || files.length > 50_000)
+      throw new Error("Invalid manifest");
+    return files.map((path: unknown) => relativeProjectPath(path));
+  } catch {
+    throw new HttpError(409, "O manifesto do build ativo está inválido. Restaure o manifesto a partir de uma cópia de segurança antes de publicar.");
+  }
+}
+
 async function deploy(
   project: WithId<ProjectRecord>,
   build: WithId<ProjectBuildRecord>,
@@ -144,23 +176,10 @@ async function deploy(
       `Configuração PM2 não encontrada. Salve a configuração na aba Variáveis de ambiente ou inclua ${project.pm2ConfigPath} no pacote ou na pasta do projeto.`,
     );
   }
-  let previousFiles: string[] = [];
-  if (project.activeBuildId) {
-    previousFiles = JSON.parse(
-      await readFile(
-        resolve(
-          projectBuildFolder(project._id, project.activeBuildId),
-          "manifest.json",
-        ),
-        "utf8",
-      ),
-    ) as string[];
-    // Once installed, the local configuration is managed independently of builds.
-    if (preserveConfig || !configInBuild)
-      previousFiles = previousFiles.filter(
-        (path) => !isConfig(path),
-      );
-  }
+  let previousFiles = await previousBuildFiles(project, control);
+  // Once installed, the local configuration is managed independently of builds.
+  if (preserveConfig || !configInBuild)
+    previousFiles = previousFiles.filter((path) => !isConfig(path));
   const attemptId = randomUUID();
   const attempt = deploymentFolder(project._id, build._id, attemptId);
   control?.report(45, "Preparando cópia de segurança");

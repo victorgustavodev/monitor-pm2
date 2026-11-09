@@ -132,12 +132,14 @@ function upload(
   name,
   entries,
   comments = "Atualização da aplicação para esta versão.",
+  operationId,
 ) {
   const data = new FormData();
   data.set("name", name);
   data.set("comments", comments);
   data.set("build", new Blob([zip(entries)]), "release.zip");
-  return request(`/api/projects/${id}/builds`, { method: "POST", body: data });
+  const query = operationId ? `?operationId=${operationId}` : "";
+  return request(`/api/projects/${id}/builds${query}`, { method: "POST", body: data });
 }
 const packageFiles = (version, wrapper = "") => [
   [
@@ -1346,4 +1348,102 @@ test("publication endpoints stream stages, cancel file changes and preserve fail
     assert.equal(state.status, "failed");
     assert.match(state.logs.join("\n"), /Falha simulada no PM2.*restaurados/);
   } finally { failDeployment = false; }
+});
+
+test("missing active manifests allow publication without guessing which old files to delete", async (t) => {
+  for (const missing of ["manifest", "directory"]) {
+    await t.test(missing, async () => {
+      const entry = await json(await post("/api/projects", {
+        name: `Missing ${missing}`,
+        rootPath: resolve(directory, `missing-${missing}`),
+      }), 201);
+      const first = await json(await upload(entry._id, "original", [
+        ...packageFiles("original"), ["old.txt", "old"], [".env", "PORT=3000"],
+      ]), 201);
+      const liveConfig = resolve(entry.rootPath, "ecosystem.config.js");
+      await writeFile(liveConfig, 'module.exports={apps:[{name:"local",script:"./dist/main.js"}]};');
+      const config = await readFile(liveConfig, "utf8");
+      const modified = (await stat(liveConfig)).mtimeMs;
+      await writeFile(resolve(entry.rootPath, ".env"), "PORT=9000");
+      await writeFile(resolve(entry.rootPath, "local.txt"), "local");
+      const folder = resolve(directory, "archives/projects", entry._id, first._id);
+      assert.ok(folder.startsWith(resolve(directory, "archives/projects") + sep));
+      if (missing === "directory") await rm(folder, { recursive: true });
+      else await rm(resolve(folder, "manifest.json"));
+      const operation = await json(await post(`/api/projects/${entry._id}/build-operations`, {}), 201);
+      const next = await json(await upload(entry._id, "next", [
+        ...packageFiles("next"), ["next-only.txt", "next"],
+      ], undefined, operation.id), 201);
+      assert.match(await readFile(resolve(entry.rootPath, "dist/main.js"), "utf8"), /next/);
+      assert.equal(await readFile(resolve(entry.rootPath, "old.txt"), "utf8"), "old");
+      assert.equal(await readFile(resolve(entry.rootPath, "local.txt"), "utf8"), "local");
+      assert.equal(await readFile(resolve(entry.rootPath, ".env"), "utf8"), "PORT=9000");
+      assert.equal(await readFile(liveConfig, "utf8"), config);
+      assert.equal((await stat(liveConfig)).mtimeMs, modified);
+      const { getBuildOperation } = require("../dist/projects/build-progress");
+      const progress = getBuildOperation(operation.id, entry._id, "admin").state;
+      assert.equal(progress.status, "succeeded");
+      assert.match(progress.logs.join("\n"), /Manifesto do build ativo ausente/);
+      const manifest = JSON.parse(await readFile(resolve(directory, "archives/projects", entry._id, next._id, "manifest.json"), "utf8"));
+      assert.deepEqual(manifest.sort(), ["dist/main.js", "next-only.txt"]);
+      assert.equal((await json(await request(`/api/projects/${entry._id}`))).activeBuildId, next._id);
+      await json(await upload(entry._id, "third", packageFiles("third")), 201);
+      await assert.rejects(readFile(resolve(entry.rootPath, "next-only.txt")), { code: "ENOENT" });
+      assert.equal(await readFile(resolve(entry.rootPath, "old.txt"), "utf8"), "old");
+    });
+  }
+});
+
+test("a failed publication with a missing active manifest restores overwritten files and can be retried", async () => {
+  const entry = await json(await post("/api/projects", {
+    name: "Missing manifest rollback", rootPath: resolve(directory, "missing-manifest-rollback"),
+  }), 201);
+  const original = await json(await upload(entry._id, "original", [
+    ...packageFiles("original"), ["old.txt", "old"],
+  ]), 201);
+  await rm(resolve(directory, "archives/projects", entry._id, original._id, "manifest.json"));
+  const configPath = resolve(entry.rootPath, "ecosystem.config.js");
+  const modified = (await stat(configPath)).mtimeMs;
+  failDeployment = true;
+  try {
+    const response = await upload(entry._id, "failed", [
+      ...packageFiles("changed"), ["new.txt", "new"],
+    ]);
+    assert.match((await json(response, 502)).message, /restaurados/);
+  } finally { failDeployment = false; }
+  assert.match(await readFile(resolve(entry.rootPath, "dist/main.js"), "utf8"), /original/);
+  assert.equal(await readFile(resolve(entry.rootPath, "old.txt"), "utf8"), "old");
+  assert.equal((await stat(configPath)).mtimeMs, modified);
+  await assert.rejects(readFile(resolve(entry.rootPath, "new.txt")), { code: "ENOENT" });
+  const state = await json(await request(`/api/projects/${entry._id}`));
+  assert.equal(state.activeBuildId, original._id);
+  assert.equal(state.deploying, false);
+  const history = await json(await request(`/api/projects/${entry._id}/builds`));
+  const failed = history.items.find(build => build.name === "failed");
+  await json(await post(`/api/projects/${entry._id}/builds/${failed._id}/deploy`, {}));
+  assert.match(await readFile(resolve(entry.rootPath, "dist/main.js"), "utf8"), /changed/);
+});
+
+test("invalid or unreadable active manifests block publication before changing live files", async () => {
+  const entry = await json(await post("/api/projects", {
+    name: "Invalid manifest", rootPath: resolve(directory, "invalid-manifest"),
+  }), 201);
+  const original = await json(await upload(entry._id, "original", packageFiles("original")), 201);
+  const manifest = resolve(directory, "archives/projects", entry._id, original._id, "manifest.json");
+  const calls = deployments.length;
+  const invalid = ["{", '{"files":[]}', '["../outside.txt"]', "[1]"];
+  for (let index = 0; index < invalid.length; index++) {
+    await writeFile(manifest, invalid[index]);
+    const response = await upload(entry._id, `invalid-${index}`, packageFiles("changed"));
+    assert.match((await json(response, 409)).message, /manifesto.*inválido/);
+  }
+  await rm(manifest);
+  await mkdir(manifest);
+  const unreadable = await upload(entry._id, "unreadable", packageFiles("changed"));
+  assert.match((await json(unreadable, 409)).message, /Não foi possível ler o manifesto/);
+  assert.equal(deployments.length, calls);
+  assert.match(await readFile(resolve(entry.rootPath, "dist/main.js"), "utf8"), /original/);
+  const state = await json(await request(`/api/projects/${entry._id}`));
+  assert.equal(state.activeBuildId, original._id);
+  assert.equal(state.deploying, false);
 });
