@@ -8,6 +8,8 @@ const {
   readdir,
   rm,
   symlink,
+  stat,
+  utimes,
 } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const { resolve, sep } = require("node:path");
@@ -887,7 +889,7 @@ test("saved PM2 configuration is validated without executing it and is preserved
   assert.equal(cleared.pm2ConfigContent, "");
 });
 
-test("ZIPs without an ecosystem use saved configuration snapshots while preserving the original archive", async () => {
+test("local ecosystem edits and timestamps survive new builds and old snapshot republication", async () => {
   const configA =
     'module.exports={apps:[{name:"saved-app",script:"./dist/main.js",env:{RELEASE:"a"}}]};';
   const configB = configA.replace('"a"', '"b"');
@@ -934,15 +936,21 @@ test("ZIPs without an ecosystem use saved configuration snapshots while preservi
     configA,
     "Saving settings does not change live files",
   );
+  const localConfig = configA.replace('"a"', '"local-edit"');
+  await writeFile(liveConfig, localConfig);
+  await utimes(liveConfig, new Date("2026-01-01T11:02:00Z"), new Date("2026-01-01T11:02:00Z"));
+  const modified = (await stat(liveConfig)).mtimeMs;
   await json(
     await upload(entry._id, "without-ecosystem-v2", [
       ["dist/main.js", 'console.log("release-b")'],
     ]),
     201,
   );
-  assert.equal(await readFile(liveConfig, "utf8"), configB);
+  assert.equal(await readFile(liveConfig, "utf8"), localConfig);
+  assert.equal((await stat(liveConfig)).mtimeMs, modified);
   await json(await post(`${path}/builds/${firstBuild._id}/deploy`, {}));
-  assert.equal(await readFile(liveConfig, "utf8"), configA);
+  assert.equal(await readFile(liveConfig, "utf8"), localConfig);
+  assert.equal((await stat(liveConfig)).mtimeMs, modified);
   await json(
     await upload(entry._id, "ecosystem-from-zip", [
       ["ecosystem.config.js", configC],
@@ -952,9 +960,10 @@ test("ZIPs without an ecosystem use saved configuration snapshots while preservi
   );
   assert.equal(
     await readFile(liveConfig, "utf8"),
-    configC,
-    "The archive configuration takes precedence",
+    localConfig,
+    "The local configuration takes precedence over the archive",
   );
+  assert.equal((await stat(liveConfig)).mtimeMs, modified);
   await json(
     await request(path, {
       method: "PUT",
@@ -969,12 +978,17 @@ test("ZIPs without an ecosystem use saved configuration snapshots while preservi
   );
   assert.equal(
     await readFile(liveConfig, "utf8"),
-    configC,
+    localConfig,
     "An existing VM configuration is preserved",
   );
+  assert.equal((await stat(liveConfig)).mtimeMs, modified);
+  // When the local file is absent, an archived snapshot can still initialize it.
+  await rm(liveConfig);
+  await json(await post(`${path}/builds/${firstBuild._id}/deploy`, {}));
+  assert.equal(await readFile(liveConfig, "utf8"), configA);
 });
 
-test("saving configuration allows retrying a missing-ecosystem build and PM2 failure restores the previous configuration", async () => {
+test("saved configuration initializes a missing ecosystem and failed deployments preserve local files", async () => {
   const body = {
     name: "Retry saved configuration",
     rootPath: resolve(directory, "retry-configuration"),
@@ -985,7 +999,7 @@ test("saving configuration allows retrying a missing-ecosystem build and PM2 fai
     ["dist/main.js", 'console.log("original")'],
   ]);
   assert.equal(missing.status, 400);
-  assert.match((await missing.json()).message, /Editar projeto/);
+  assert.match((await missing.json()).message, /Variáveis de ambiente/);
   const failed = (await json(await request(`${path}/builds`))).items[0];
   const configA =
     'module.exports={apps:[{name:"retry-app",script:"./dist/main.js"}]};';
@@ -1000,6 +1014,8 @@ test("saving configuration allows retrying a missing-ecosystem build and PM2 fai
     await readFile(resolve(entry.rootPath, "ecosystem.config.js"), "utf8"),
     configA,
   );
+  const configPath = resolve(entry.rootPath, "ecosystem.config.js");
+  const modified = (await stat(configPath)).mtimeMs;
   await json(
     await request(path, {
       method: "PUT",
@@ -1030,6 +1046,82 @@ test("saving configuration allows retrying a missing-ecosystem build and PM2 fai
     await readFile(resolve(entry.rootPath, "dist/main.js"), "utf8"),
     /original/,
   );
+  assert.equal((await stat(configPath)).mtimeMs, modified);
+  // A failed first installation must remove the newly created config on rollback.
+  await rm(configPath);
+  failDeployment = true;
+  try {
+    assert.equal((await upload(entry._id, "failed-initial-config", [["dist/main.js", "new"]])).status, 502);
+  } finally { failDeployment = false; }
+  await assert.rejects(readFile(configPath), { code: "ENOENT" });
+});
+
+test("documentation persists separately, preserves legacy updates and validates size and type", async () => {
+  const body = { name: "Documented project", rootPath: resolve(directory, "documented-project") };
+  const documentation = "# README\n<script>plain text</script>\n```sql\nCREATE TABLE example (id INT);\n```";
+  const entry = await json(await post("/api/projects", { ...body, documentation }), 201);
+  const path = `/api/projects/${entry._id}`;
+  assert.equal(entry.documentation, documentation);
+  await json(await request(path, { method: "PUT", body: JSON.stringify(body) }));
+  assert.equal((await json(await request(path))).documentation, documentation);
+  for (const invalid of [null, {}, "é".repeat(17000)]) {
+    assert.equal((await request(path, { method: "PUT", body: JSON.stringify({ ...body, documentation: invalid }) })).status, 400);
+  }
+  assert.equal((await json(await request(path))).documentation, documentation);
+  const changed = await json(await request(path, { method: "PUT", body: JSON.stringify({ ...body, documentation: "# Updated" }) }));
+  assert.equal(changed.documentation, "# Updated");
+  const cleared = await json(await request(path, { method: "PUT", body: JSON.stringify({ ...body, documentation: "" }) }));
+  assert.equal(cleared.documentation, "");
+  await assert.rejects(readFile(resolve(entry.rootPath, "README.md")), { code: "ENOENT" });
+});
+
+test("environment files support authenticated editing, detect conflicts and reject unsafe paths and concurrent deployments", async () => {
+  const entry = await json(await post("/api/projects", { name: "Environment files", rootPath: resolve(directory, "environment-files") }), 201);
+  const base = `/api/projects/${entry._id}/environment-files/`;
+  assert.equal((await fetch(origin + base + ".env")).status, 401);
+  const missing = await json(await request(base + ".env"));
+  assert.equal(missing.revision, null);
+  assert.equal(missing.content, "");
+  const content = '# comentário\r\nPORT=3000\r\nVALUE="a=b # literal"\r\n';
+  const saved = await json(await request(base + ".env", { method: "PUT", body: JSON.stringify({ content, revision: null }) }));
+  assert.equal(await readFile(resolve(entry.rootPath, ".env"), "utf8"), content);
+  const opened = await json(await request(base + ".env"));
+  assert.equal(opened.revision, saved.revision);
+  assert.deepEqual(opened.names, [".env"]);
+  // Concurrent creation and external edits must not be overwritten.
+  assert.equal((await request(base + ".env", { method: "PUT", body: JSON.stringify({ content: "PORT=4000", revision: null }) })).status, 409);
+  await writeFile(resolve(entry.rootPath, ".env"), "PORT=5000\n");
+  assert.equal((await request(base + ".env", { method: "PUT", body: JSON.stringify({ content: "PORT=4000", revision: saved.revision }) })).status, 409);
+  assert.equal(await readFile(resolve(entry.rootPath, ".env"), "utf8"), "PORT=5000\n");
+  const fresh = await json(await request(base + ".env"));
+  await json(await request(base + ".env", { method: "PUT", body: JSON.stringify({ content: "PORT=6000\n", revision: fresh.revision }) }));
+  await json(await request(base + ".env.production", { method: "PUT", body: JSON.stringify({ content: "MODE=production\n", revision: null }) }));
+  assert.equal(await readFile(resolve(entry.rootPath, ".env.production"), "utf8"), "MODE=production\n");
+  for (const name of ["README.md", "../.env", "config/.env", ".env/other"]) {
+    assert.equal((await request(base + encodeURIComponent(name))).status, 400);
+    assert.equal((await request(base + encodeURIComponent(name), { method: "PUT", body: JSON.stringify({ content: "bad", revision: null }) })).status, 400);
+  }
+  for (const content of [null, "x".repeat(33000), "KEY=\0value"]) {
+    assert.equal((await request(base + ".env.invalid", { method: "PUT", body: JSON.stringify({ content, revision: null }) })).status, 400);
+  }
+  assert.equal((await request(base + ".env.invalid", { method: "PUT", body: JSON.stringify({ content: "KEY=1" }) })).status, 400);
+  await mkdir(resolve(entry.rootPath, ".env.directory"));
+  assert.equal((await request(base + ".env.directory")).status, 400);
+  await writeFile(resolve(entry.rootPath, ".env.encoding"), Buffer.from([0xff]));
+  assert.equal((await request(base + ".env.encoding")).status, 400);
+  const outside = resolve(directory, "environment-outside");
+  await mkdir(outside);
+  await symlink(outside, resolve(entry.rootPath, ".env.link"), process.platform === "win32" ? "junction" : "dir");
+  assert.equal((await request(base + ".env.link")).status, 400);
+  assert.equal((await request(base + ".env.link", { method: "PUT", body: JSON.stringify({ content: "bad", revision: null }) })).status, 400);
+  const { withProjectOperation } = require("../dist/projects/project-operations");
+  const { ObjectId } = require("mongodb");
+  await withProjectOperation(new ObjectId(entry._id), async () => {
+    assert.equal((await request(base + ".env.busy", { method: "PUT", body: JSON.stringify({ content: "KEY=1", revision: null }) })).status, 409);
+  });
+  const before = deployments.length;
+  await json(await request(base + ".env.empty", { method: "PUT", body: JSON.stringify({ content: "", revision: null }) }));
+  assert.equal(deployments.length, before, "Saving env files does not execute PM2");
 });
 
 test("deletion previews identify processes by folder and keeping them leaves PM2 untouched", async () => {

@@ -15,6 +15,7 @@ import {
   projectDeletionPreview,
 } from "./projects.service";
 import { browseProject } from "./project-files";
+import { getEnvironmentFile, saveEnvironmentFile } from "./project-environment";
 import { projectPath, relativeProjectPath } from "./project-paths";
 import {
   createProjectBuild,
@@ -101,6 +102,12 @@ projectRoutes.get("/:id/deletion-preview", async (request, response) => {
 projectRoutes.get("/:id/files", async (request, response) => {
   const project = await getProject(request.params.id);
   response.json(await browseProject(project.rootPath, request.query.path));
+});
+projectRoutes.get("/:id/environment-files/:name", async (request, response) => {
+  response.json(await getEnvironmentFile(request.params.id, request.params.name));
+});
+projectRoutes.put("/:id/environment-files/:name", async (request, response) => {
+  response.json(await saveEnvironmentFile(request.params.id, request.params.name, request.body));
 });
 projectRoutes.get("/:id/files/download", async (request, response, next) => {
   const project = await getProject(request.params.id);

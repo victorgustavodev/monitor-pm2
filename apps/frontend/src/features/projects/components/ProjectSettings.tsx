@@ -6,7 +6,6 @@ import {
   type ProjectDeletionPreview,
   type ProjectDeletionOptions,
 } from "../types";
-import { Pm2ConfigurationField } from "./Pm2ConfigurationField";
 
 export function ProjectSettings({
   project,
@@ -101,10 +100,6 @@ export function ProjectSettings({
             )}
           </small>
         </label>
-        <Pm2ConfigurationField
-          content={project.pm2ConfigContent}
-          disabled={locked}
-        />
         <div className="project-form-actions">
           <button className="project-button" disabled={locked}>
             {busy ? t("Salvando…") : t("Salvar alterações")}

@@ -66,6 +66,7 @@ export interface ProjectRecord {
   name: string;
   nameKey: string;
   description: string;
+  documentation?: string;
   rootPath: string;
   rootKey: string;
   pm2ConfigPath: string;

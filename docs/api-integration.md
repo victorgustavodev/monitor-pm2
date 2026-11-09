@@ -117,3 +117,9 @@ O cliente cria uma operação com `POST /api/projects/:id/build-operations`, aco
 `GET /api/processes` e o SSE incluem `projectId`, `projectName`, `projectUpdatedAt` (nulos se ausentes) e `projectObservedAt` (data da consulta dos vínculos). `PUT /api/processes/:id/project` exige sessão e recebe `{ name, namespace, projectId }`, com ID de projeto válido ou `null` para remover o vínculo. Retorna `{ name, namespace, projectId, projectName, projectUpdatedAt }`. Valida a identidade atual contra o PM2; ID inexistente retorna 404, identidade desatualizada retorna 409, projeto inexistente retorna 404 e projeto em exclusão/recuperação retorna 409. Não altera processos no daemon.
 
 As APIs legadas de versões e histórico global continuam disponíveis por compatibilidade; a interface usa somente builds vinculados a projetos.
+
+## Documentação e arquivos de ambiente do projeto
+
+POST/PUT de projetos aceitam `documentation` opcional (texto UTF-8 até 32 KB); omissão no PUT preserva o valor. Formulários de documentação e configuração PM2 enviam os campos gerais exigidos pela API e apenas o conteúdo que editam, sem apagar os demais campos opcionais.
+
+GET/PUT `/api/projects/:id/environment-files/:name` leem e gravam `.env` e variantes na raiz. GET retorna `{ name, content, revision, names }`; PUT recebe `{ content, revision }`. Revisão é SHA-256 do conteúdo lido ou `null` para criação. Conflito retorna 409 e a UI mantém o rascunho. Conteúdo é UTF-8 até 32 KB; nomes, caminhos e links são validados pelo backend. Salvar bloqueia ações conflitantes e navegação, sem executar PM2. Erro 401 segue o fluxo de sessão existente. Valores não entram na auditoria nem no armazenamento do navegador.

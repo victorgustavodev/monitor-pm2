@@ -3,6 +3,7 @@ export type Project = {
   _id: string;
   name: string;
   description: string;
+  documentation?: string;
   rootPath: string;
   pm2ConfigPath: string;
   pm2ConfigContent?: string;

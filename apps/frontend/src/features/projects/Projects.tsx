@@ -12,6 +12,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Settings,
   Upload,
 } from "lucide-react";
 import { api, ApiError } from "../../services/api";
@@ -24,7 +25,8 @@ import type {
   ProjectDeletionOptions,
 } from "./types";
 import { ProjectSettings } from "./components/ProjectSettings";
-import { Pm2ConfigurationField } from "./components/Pm2ConfigurationField";
+import { ProjectEnvironment } from "./components/ProjectEnvironment";
+import { ProjectDocumentation } from "./components/ProjectDocumentation";
 
 export function Projects({
   projectId,
@@ -47,7 +49,7 @@ export function Projects({
   const [creating, setCreating] = useState(false);
   const [showBuild, setShowBuild] = useState(false);
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"files" | "builds" | "settings">("files");
+  const [tab, setTab] = useState<"files" | "builds" | "about" | "environment" | "settings">("files");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [revision, setRevision] = useState(0);
@@ -147,7 +149,13 @@ export function Projects({
     try {
       const project = await api<Project>(`/api/projects/${selected._id}`, {
         method: "PUT",
-        body: JSON.stringify(Object.fromEntries(data.entries())),
+        body: JSON.stringify({
+          name: selected.name,
+          description: selected.description,
+          rootPath: selected.rootPath,
+          pm2ConfigPath: selected.pm2ConfigPath,
+          ...Object.fromEntries(data.entries()),
+        }),
       });
       setProjects((rows) =>
         rows.map((row) => (row._id === project._id ? project : row)),
@@ -315,7 +323,6 @@ export function Projects({
                     )}
                   </small>
                 </label>
-                <Pm2ConfigurationField disabled={busy} />
                 <div className="project-form-actions">
                   <button
                     type="button"
@@ -486,7 +493,9 @@ export function Projects({
                   label: `Builds (${selected.buildCount})`,
                   Icon: Package,
                 },
-                { id: "settings", label: t("Sobre o projeto"), Icon: BookOpen },
+                { id: "about", label: t("Sobre o projeto"), Icon: BookOpen },
+                { id: "environment", label: t("Variáveis de ambiente"), Icon: Code2 },
+                { id: "settings", label: t("Configuração do projeto"), Icon: Settings },
               ] as const
             ).map(({ id, label, Icon }) => (
               <button
@@ -552,6 +561,24 @@ export function Projects({
                 onSave={update}
                 onPrepareDelete={prepareDelete}
                 onDelete={remove}
+              />
+            )}
+            {tab === "about" && (
+              <ProjectDocumentation
+                key={`${selected._id}:${selected.updatedAt}`}
+                project={selected}
+                busy={busy}
+                onSave={update}
+              />
+            )}
+            {tab === "environment" && (
+              <ProjectEnvironment
+                key={selected._id}
+                project={selected}
+                busy={busy}
+                onSave={update}
+                onBusyChange={setFormBusy}
+                onSessionExpired={onSessionExpired}
               />
             )}
           </div>

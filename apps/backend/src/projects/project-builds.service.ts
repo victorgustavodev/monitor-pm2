@@ -116,27 +116,33 @@ async function deploy(
     build.sourceRoot || "",
   );
   control?.report(35, "Validando arquivos");
+  const liveConfig = await projectPath(project.rootPath, project.pm2ConfigPath, true);
+  const liveInfo = await lstat(liveConfig).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (liveInfo && !liveInfo.isFile())
+    throw new HttpError(400, "O caminho da configuração PM2 deve ser um arquivo comum.");
+  const preserveConfig = Boolean(liveInfo);
+  const isConfig = (path: string) => process.platform === "win32"
+    ? path.toLowerCase() === project.pm2ConfigPath.toLowerCase()
+    : path === project.pm2ConfigPath;
   let files = await scanBuild(source, control?.signal);
-  let configInBuild = files.includes(project.pm2ConfigPath);
-  if (!configInBuild && project.pm2ConfigContent) {
-    // Snapshot the project configuration once so old builds remain reproducible.
+  if (preserveConfig) files = files.filter((path) => !isConfig(path));
+  let configInBuild = files.some(isConfig);
+  if (!preserveConfig && !configInBuild && project.pm2ConfigContent) {
+    // Retain an initialization snapshot for destinations without a config.
     const config = await projectPath(source, project.pm2ConfigPath, true);
     await mkdir(dirname(config), { recursive: true });
     await writeFile(config, project.pm2ConfigContent, { flag: "wx" });
     files = await scanBuild(source, control?.signal);
     configInBuild = true;
   }
-  if (!configInBuild) {
-    const config = await projectPath(
-      project.rootPath,
-      project.pm2ConfigPath,
-      true,
+  if (!preserveConfig && !configInBuild) {
+    throw new HttpError(
+      400,
+      `Configuração PM2 não encontrada. Salve a configuração na aba Variáveis de ambiente ou inclua ${project.pm2ConfigPath} no pacote ou na pasta do projeto.`,
     );
-    if (!(await lstat(config).catch(() => null))?.isFile())
-      throw new HttpError(
-        400,
-        `Configuração PM2 não encontrada. Salve a configuração em Editar projeto ou inclua ${project.pm2ConfigPath} no pacote ou na pasta do projeto.`,
-      );
   }
   let previousFiles: string[] = [];
   if (project.activeBuildId) {
@@ -149,10 +155,10 @@ async function deploy(
         "utf8",
       ),
     ) as string[];
-    // An existing PM2 configuration may be intentionally managed outside a new package.
-    if (!configInBuild)
+    // Once installed, the local configuration is managed independently of builds.
+    if (preserveConfig || !configInBuild)
       previousFiles = previousFiles.filter(
-        (path) => path !== project.pm2ConfigPath,
+        (path) => !isConfig(path),
       );
   }
   const attemptId = randomUUID();

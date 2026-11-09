@@ -119,7 +119,9 @@ O título da Home cumprimenta o usuário conectado com “Olá, nome”, respeit
 
 Arquivos são lidos pela API a partir da pasta do projeto na VM. Publicação, validação de caminhos e execução PM2 pertencem ao backend. Cadastros, uploads e republicações bloqueiam ações conflitantes e a navegação até concluir. Consulte [Projetos](projects.md) para modelo de dados e contratos.
 
-`Pm2ConfigurationField` compartilha entre cadastro e edição o conteúdo opcional do ecosystem (`pm2ConfigContent`). O backend valida sintaxe sem executá-lo no salvamento e materializa uma cópia no armazenamento do build quando falta o arquivo no pacote, usando o mesmo fluxo de publicação e recuperação dos demais arquivos.
+`ProjectDocumentation` compõe a aba Sobre o projeto, com edição e prévia segura de documentação (`documentation`) persistida no MongoDB. `ProjectEnvironment` compõe Variáveis de ambiente, consulta o ecosystem local e habilita `Pm2ConfigurationField` somente se o arquivo estiver ausente. `ProjectEnvironmentFiles` edita arquivos `.env` e variantes da raiz pela API autenticada, com revisão de conteúdo e bloqueio de navegação durante o salvamento. `ProjectSettings` mantém configurações gerais e exclusão em uma aba separada, acessível por Editar projeto.
+
+O backend preserva o ecosystem existente no destino, inclusive em republicações, e o exclui da substituição e remoção de arquivos da tentativa. Somente na ausência do ecosystem local e do arquivo no build materializa uma cópia de `pm2ConfigContent`, validado sem execução ao salvar. A edição de `.env` em `src/projects/project-environment.ts` compartilha o bloqueio de operações do projeto; não reinicia processos.
 
 ## Evolução incremental
 

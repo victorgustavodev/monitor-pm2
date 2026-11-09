@@ -24,7 +24,7 @@ export function Pm2ConfigurationField({
       />
       <small>
         {t(
-          "Cole o conteúdo do ecosystem uma vez. Se o ZIP não incluir esse arquivo, o monitor usará esta configuração. O caminho do script deve corresponder aos arquivos do ZIP. Limite: 16 KB.",
+          "Configure o ecosystem e suas variáveis em env. Esta configuração só será usada na publicação se o arquivo não existir na pasta do projeto nem no pacote. Limite: 16 KB.",
         )}
       </small>
       <small>

@@ -80,6 +80,7 @@ async function projectFields(
   body: Record<string, unknown> | undefined,
   excludeId?: ObjectId,
   previousConfig = "",
+  previousDocumentation = "",
 ) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const description =
@@ -91,6 +92,10 @@ async function projectFields(
     );
   if (description.length > 500)
     throw new HttpError(400, "A descrição deve ter até 500 caracteres.");
+  const documentation = body?.documentation === undefined
+    ? previousDocumentation : body.documentation;
+  if (typeof documentation !== "string" || Buffer.byteLength(documentation, "utf8") > 32 * 1024)
+    throw new HttpError(400, "A documentação deve ser um texto de até 32 KB.");
   const rootPath = await validateProjectRoot(body?.rootPath);
   const pm2ConfigPath = relativeProjectPath(
     body?.pm2ConfigPath || "ecosystem.config.js",
@@ -126,6 +131,7 @@ async function projectFields(
     name,
     nameKey: name.toLowerCase(),
     description,
+    documentation,
     rootPath,
     rootKey: rootPath.toLowerCase(),
     pm2ConfigPath,
@@ -192,6 +198,7 @@ export async function updateProject(
         body,
         id,
         current.pm2ConfigContent || "",
+        current.documentation || "",
       );
       const rootChanged = current.rootKey !== fields.rootKey;
       await mkdir(fields.rootPath, { recursive: true });

@@ -16,6 +16,9 @@ let pendingProjectBuild;
 let pendingPublication;
 let pendingSettings;
 let pendingProjectUpdate, pendingProjectDelete;
+let localEcosystem = null, ecosystemReadError = 0;
+let pendingEnvironmentSave, environmentConflict = false;
+const environmentFiles = new Map();
 let retention = {
   enabled: false,
   retentionDays: 30,
@@ -219,6 +222,18 @@ before(
           processes: [{ id: 1, name: "api-service", status: "online" }],
           revision: "process-revision",
         });
+      if (url.includes("/environment-files/")) {
+        const name = decodeURIComponent(url.split("/").at(-1));
+        if (options.method === "PUT") return new Promise(done => {
+          pendingEnvironmentSave = () => {
+            if (environmentConflict) return done(json({ message: "O arquivo foi alterado desde a abertura." }, 409));
+            const data = JSON.parse(options.body);
+            environmentFiles.set(name, { name, content: data.content, revision: "a".repeat(64) });
+            done(json(environmentFiles.get(name)));
+          };
+        });
+        return json({ ...(environmentFiles.get(name) || { name, content: "", revision: null }), names: [...environmentFiles.keys()] });
+      }
       if (
         /^\/api\/projects\/[a-f0-9]+$/.test(String(url)) &&
         options.method === "PUT"
@@ -256,6 +271,11 @@ before(
         const path = new URL(String(url), "http://localhost").searchParams.get(
           "path",
         );
+        if (path?.endsWith("ecosystem.config.js")) {
+          if (ecosystemReadError) return json({ message: "Falha ao ler configuração." }, ecosystemReadError);
+          return localEcosystem === null ? json({ message: "Arquivo não encontrado." }, 404)
+            : json({ type: "file", path, size: localEcosystem.length, modifiedAt: "2026-01-01T00:00:00Z", binary: false, truncated: false, content: localEcosystem });
+        }
         if (path === "docs/README.md")
           return json({
             type: "file",
@@ -948,8 +968,91 @@ test("projects browse local files and keep build publication and history inside 
     description: "Outra aplicação",
     rootPath: "C:\\servicos\\ProjetoY",
     pm2ConfigPath: "ecosystem.config.js",
-    pm2ConfigContent: "",
   });
+  await go("Home");
+});
+
+test("project documentation is saved independently and ecosystem configuration is editable only when absent", async () => {
+  await go("Projetos");
+  const button = label => [...document.querySelectorAll("main button")].find(node => node.textContent.trim() === label);
+  await act(async () => document.querySelector("#project-tab-about").click());
+  assert.equal(document.querySelector('[name="pm2ConfigContent"]'), null);
+  const field = document.querySelector('[name="documentation"]');
+  const documentation = "# README\n**Banco**\n- Tabela users\n[Diagrama](https://example.com/schema)\n<script>unsafe()</script>\n[Unsafe](javascript:alert(1))\n```sql\nSELECT 1;\n```";
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value").set.call(field, documentation);
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  await act(async () => button("Visualizar documentação").click());
+  const preview = document.querySelector(".project-documentation-preview");
+  assert.equal(preview.querySelector("h3").textContent, "README");
+  assert.equal(preview.querySelector("script"), null);
+  assert.equal(preview.querySelectorAll("a").length, 1);
+  assert.equal(preview.querySelector("pre").textContent, "SELECT 1;");
+  await act(async () => button("Salvar documentação").click());
+  assert.equal(navigation("Home").disabled, true);
+  assert.equal(document.querySelector("#project-tab-environment").disabled, true);
+  const saved = JSON.parse(requests.at(-1).body);
+  assert.equal(saved.documentation, documentation);
+  assert.equal("pm2ConfigContent" in saved, false);
+  await act(async () => pendingProjectUpdate());
+  await act(async () => document.querySelector("#project-tab-environment").click());
+  const config = document.querySelector('[name="pm2ConfigContent"]');
+  assert.ok(config);
+  config.value = 'module.exports = { apps: [{ name: "app", script: "./main.js", env: { PORT: 3000 } }] };';
+  await act(async () => config.form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  assert.equal(navigation("Home").disabled, true);
+  const configRequest = JSON.parse(requests.at(-1).body);
+  assert.match(configRequest.pm2ConfigContent, /PORT: 3000/);
+  assert.equal("documentation" in configRequest, false);
+  await act(async () => pendingProjectUpdate());
+  assert.equal(document.querySelector('[name="pm2ConfigContent"]').value, configRequest.pm2ConfigContent);
+  const envContent = () => document.querySelector('[name="environmentContent"]');
+  async function setEnvironment(value) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value").set.call(envContent(), value);
+      envContent().dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    });
+  }
+  await setEnvironment('PORT=3000\nLABEL="a=b"\n');
+  await act(async () => button("Salvar arquivo de ambiente").click());
+  assert.equal(navigation("Home").disabled, true);
+  assert.equal(document.querySelector('[name="pm2ConfigContent"]').form.querySelector('button[type="submit"], button:not([type])').disabled, true);
+  assert.equal(button("Abrir / recarregar arquivo").disabled, true);
+  await act(async () => pendingEnvironmentSave());
+  assert.equal(navigation("Home").disabled, false);
+  assert.equal(environmentFiles.get(".env").content, 'PORT=3000\nLABEL="a=b"\n');
+  await setEnvironment("PORT=4000\n");
+  environmentConflict = true;
+  await act(async () => button("Salvar arquivo de ambiente").click());
+  await act(async () => pendingEnvironmentSave());
+  assert.equal(envContent().value, "PORT=4000\n", "Keep the draft on save failure");
+  assert.match(document.querySelector('[role="alert"]').textContent, /alterado desde/);
+  environmentConflict = false;
+  await act(async () => button("Abrir / recarregar arquivo").click());
+  assert.equal(envContent().value, environmentFiles.get(".env").content);
+  await act(async () => {
+    const name = document.querySelector('[name="environmentFileName"]');
+    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(name, ".env.production");
+    name.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  await act(async () => button("Abrir / recarregar arquivo").click());
+  await setEnvironment("MODE=production\n");
+  await act(async () => button("Salvar arquivo de ambiente").click());
+  await act(async () => pendingEnvironmentSave());
+  assert.equal(environmentFiles.get(".env.production").content, "MODE=production\n");
+  localEcosystem = 'module.exports = { apps: [{ env: { PORT: 9000 } }] };';
+  await act(async () => button("Atualizar").click());
+  assert.equal(document.querySelector('[name="pm2ConfigContent"]'), null);
+  assert.match(document.querySelector(".repository-preview").textContent, /PORT: 9000/);
+  ecosystemReadError = 500;
+  await act(async () => button("Atualizar").click());
+  assert.equal(document.querySelector('[name="pm2ConfigContent"]'), null);
+  assert.match(document.querySelector('[role="alert"]').textContent, /Falha ao ler/);
+  ecosystemReadError = 0;
+  localEcosystem = null;
+  await act(async () => document.querySelector("#project-tab-about").click());
+  assert.match(document.querySelector(".project-documentation-preview").textContent, /README/);
   await go("Home");
 });
 
@@ -1101,8 +1204,7 @@ test("project editing saves changes and deletion requires the project name while
     "C:\\servicos\\ProjetoY-atualizado";
   form.querySelector('[name="pm2ConfigPath"]').value =
     "config/ecosystem.config.js";
-  form.querySelector('[name="pm2ConfigContent"]').value =
-    'module.exports = { apps: [{ name: "app", script: "./main.js" }] };';
+  assert.equal(form.querySelector('[name="pm2ConfigContent"]'), null);
   await act(async () =>
     form.dispatchEvent(
       new dom.window.Event("submit", { bubbles: true, cancelable: true }),
@@ -1126,13 +1228,7 @@ test("project editing saves changes and deletion requires the project name while
     description: "Nova descrição",
     rootPath: "C:\\servicos\\ProjetoY-atualizado",
     pm2ConfigPath: "config/ecosystem.config.js",
-    pm2ConfigContent:
-      'module.exports = { apps: [{ name: "app", script: "./main.js" }] };',
   });
-  assert.equal(
-    document.querySelector('[name="pm2ConfigContent"]').value,
-    JSON.parse(saved.body).pm2ConfigContent,
-  );
   await act(async () => button("Excluir projeto").click());
   assert.equal(button("Confirmar exclusão").disabled, true);
   assert.match(
