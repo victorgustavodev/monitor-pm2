@@ -33,10 +33,12 @@ export function Management({
   panel,
   onSessionExpired,
   onBusyChange,
+  onRoleChanged,
 }: {
   panel: ManagementPanel;
   onSessionExpired: () => void;
   onBusyChange: (busy: boolean) => void;
+  onRoleChanged: (username: string, role: User["role"]) => void;
 }) {
   const [users, setUsers] = useState<User[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
@@ -46,6 +48,8 @@ export function Management({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [roleDrafts, setRoleDrafts] = useState<Record<string, User["role"]>>({});
+  const [savingRole, setSavingRole] = useState<string | null>(null);
 
   useEffect(() => {
     onBusyChange(busy);
@@ -111,6 +115,18 @@ export function Management({
     } finally {
       setBusy(false);
     }
+  }
+  async function saveRole(user: User) {
+    if (busy) return;
+    setBusy(true); setSavingRole(user.id); setError(""); setNotice("");
+    try {
+      const saved = await api<User>(`/api/users/${user.id}/role`, { method: "PUT", body: JSON.stringify({ role: roleDrafts[user.id] || user.role }) });
+      setUsers(values => values.map(value => value.id === saved.id ? saved : value));
+      setRoleDrafts(values => ({ ...values, [saved.id]: saved.role }));
+      setNotice(t("Perfil do usuário atualizado."));
+      onRoleChanged(saved.username, saved.role);
+    } catch (reason) { fail(reason); }
+    finally { setBusy(false); setSavingRole(null); }
   }
 
   return (
@@ -200,7 +216,7 @@ export function Management({
                 </select>
               </label>
               <button disabled={busy} className={buttonStyle}>
-                {busy ? t("Criando…") : t("Criar usuário")}
+                {busy && !savingRole ? t("Criando…") : t("Criar usuário")}
               </button>
             </form>
             <ul className="divide-y divide-line">
@@ -216,6 +232,13 @@ export function Management({
                     )}{" "}
                     · {t("Criado em")} {date(user.createdAt)}
                   </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select aria-label={t("Perfil de {0}", { 0: user.username })} className={inputStyle} disabled={busy}
+                      value={roleDrafts[user.id] || user.role} onChange={event => setRoleDrafts(values => ({ ...values, [user.id]: event.target.value as User["role"] }))}>
+                      <option value="user">{t("Usuário comum")}</option><option value="admin">{t("Administrador")}</option>
+                    </select>
+                    <button className={buttonStyle} disabled={busy || !roleDrafts[user.id] || roleDrafts[user.id] === user.role} onClick={() => void saveRole(user)} aria-label={t("Salvar perfil de {0}", { 0: user.username })}>{savingRole === user.id ? t("Salvando…") : t("Salvar perfil")}</button>
+                  </div>
                 </li>
               ))}
             </ul>

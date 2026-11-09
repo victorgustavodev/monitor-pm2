@@ -16,6 +16,9 @@ import { Home } from "../features/home/Home";
 import { Applications } from "../features/processes/Applications";
 import { Settings } from "../features/settings/Settings";
 import { Projects } from "../features/projects/Projects";
+import { useBuildPublication } from "../features/projects/useBuildPublication";
+import { BuildProgressPanel } from "../features/projects/components/BuildProgressPanel";
+import { ProcessActionConfirmation } from "../features/processes/components/ProcessActionConfirmation";
 import { useLocale } from "../i18n";
 import {
   mergeProcessLabels,
@@ -35,6 +38,11 @@ export function App() {
   const [connected, setConnected] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const autoRefreshRef = useRef(autoRefresh);
+  autoRefreshRef.current = autoRefresh;
+  const [liveConnected, setLiveConnected] = useState(false);
+  const [liveTick, setLiveTick] = useState(0);
+  const [confirmation, setConfirmation] = useState<{ process: Process; action: ProcessAction } | null>(null);
   const [managementBusy, setManagementBusy] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [processes, setProcesses] = useState<Process[]>([]);
@@ -73,6 +81,8 @@ export function App() {
       setLoading(false);
     }
   }, []);
+  const buildCompleted = useCallback(async () => { if (autoRefreshRef.current) await load(); }, [load]);
+  const publication = useBuildPublication(authenticated === true, username, sessionExpired, buildCompleted);
   useEffect(() => {
     api<{ username: string; role: "admin" | "user" }>("/api/auth/me")
       .then((session) => {
@@ -95,6 +105,7 @@ export function App() {
   }, [load]);
   useEffect(() => {
     if (!authenticated || !autoRefresh) return;
+    setLiveConnected(false);
     let active = true;
     let stream: EventSource;
     let retry: number | undefined;
@@ -107,9 +118,15 @@ export function App() {
         ) as Process[];
         setProcesses((current) => mergeProcessLabels(rows, current));
         setConnected(true);
+        setLiveConnected(true);
+        setLiveTick(value => value + 1);
         setUpdatedAt(new Date());
         setLoading(false);
         setError("");
+      });
+      stream.addEventListener("live", () => {
+        if (!active) return;
+        setLiveConnected(true); setLiveTick(value => value + 1); setConnected(true); setUpdatedAt(new Date());
       });
       stream.addEventListener("metrics-error", (event) => {
         if (!active) return;
@@ -117,6 +134,7 @@ export function App() {
           message: string;
         };
         setConnected(false);
+        setLiveConnected(false);
         setLoading(false);
         setError(data.message);
       });
@@ -129,6 +147,7 @@ export function App() {
       stream.onerror = () => {
         if (!active) return;
         setConnected(false);
+        setLiveConnected(false);
         setLoading(false);
         setError(
           t("Conexão de atualizações interrompida. Tentando reconectar…"),
@@ -172,22 +191,25 @@ export function App() {
     await load();
   }
 
-  async function act(process: Process, action: ProcessAction) {
-    if (
-      action === "delete" &&
-      !window.confirm(t("Remover {0} da lista do PM2?", { 0: process.name }))
-    )
-      return;
+  async function executeAction(process: Process, action: ProcessAction) {
+    if (publication.processesLocked || busy !== null) return;
     setBusy(process.id);
     setError("");
     try {
-      await api(`/api/processes/${process.id}/${action}`, { method: "POST" });
+      await api(`/api/processes/${process.id}/${action}`, { method: "POST", body: JSON.stringify({ name: process.name, namespace: process.namespace || "default" }) });
       await load();
     } catch (reason) {
       setError((reason as Error).message);
+      if (reason instanceof ApiError && reason.status === 401) setAuthenticated(false);
+      throw reason;
     } finally {
       setBusy(null);
     }
+  }
+  function act(process: Process, action: ProcessAction) {
+    if (publication.processesLocked || busy !== null) return;
+    if (action === "stop" || action === "delete") setConfirmation({ process, action });
+    else void executeAction(process, action).catch(() => undefined);
   }
   async function saveLabel(process: Process, label: string) {
     setBusy(process.id);
@@ -285,6 +307,7 @@ export function App() {
 
   async function addProcess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (publication.processesLocked) return;
     setAddingProcess(true);
     setProcessError("");
     setNotice("");
@@ -305,6 +328,7 @@ export function App() {
   }
 
   function openAddProcess() {
+    if (publication.processesLocked) return;
     setProcessError("");
     processDialog.current?.showModal();
   }
@@ -379,7 +403,7 @@ export function App() {
             {view === "home" && (
               <button
                 type="button"
-                disabled={busy !== null}
+                disabled={busy !== null || publication.processesLocked}
                 onClick={openAddProcess}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-action px-4 py-2.5 text-sm font-semibold text-on-action hover:bg-action-hover"
               >
@@ -403,11 +427,10 @@ export function App() {
                 : t("Aguardando dados do PM2")}
           </span>
           <span className="sync-divider" />
-          <span>
-            {autoRefresh
-              ? t("Atualização ao vivo")
-              : t("Atualização ao vivo pausada")}
-          </span>
+          <button type="button" className={`live-indicator ${!autoRefresh ? "paused" : liveConnected ? "active" : "reconnecting"}`} aria-pressed={autoRefresh} onClick={() => setAutoRefresh(value => !value)} title={t(autoRefresh ? "Pausar atualização ao vivo" : "Retomar atualização ao vivo")}>
+            <span key={liveTick} className="live-indicator-dot" aria-hidden="true" />
+            {t(!autoRefresh ? "Atualização ao vivo pausada" : liveConnected ? "Atualização ao vivo" : "Conectando atualização ao vivo…")}
+          </button>
         </div>
         {error && (
           <div
@@ -434,6 +457,7 @@ export function App() {
         )}
         {view === "home" && (
           <Home processes={processes} connected={connected} loading={loading}>
+            {publication.processesLocked && <p role="status" className="project-message">{t(publication.ready ? "As ações dos processos estão bloqueadas durante publicações." : "Sincronizando publicações antes de liberar ações dos processos…")}</p>}
             <Applications
               onProjectEdit={setLinkProcess}
               onOpenProject={openProject}
@@ -442,7 +466,7 @@ export function App() {
               query={query}
               onQueryChange={setQuery}
               loading={loading}
-              busy={busy}
+              busy={publication.processesLocked ? -1 : busy}
               onAction={act}
               onLogs={showLogs}
               onAdd={openAddProcess}
@@ -455,10 +479,12 @@ export function App() {
             panel={managementPanel}
             onSessionExpired={sessionExpired}
             onBusyChange={setManagementBusy}
+            onRoleChanged={(name, nextRole) => { if (name === username) { setRole(nextRole); if (nextRole !== "admin") setView("home"); } }}
           />
         )}
         {view === "projects" && (
           <Projects
+            publication={publication}
             projectId={selectedProjectId}
             onSelectProject={setSelectedProjectId}
             onStarted={load}
@@ -476,7 +502,11 @@ export function App() {
           />
         )}
       </main>
-      {linkProcess && <ProcessProjectDialog process={linkProcess} busy={projectSaving}
+      <BuildProgressPanel publication={publication} />
+      {confirmation && <ProcessActionConfirmation process={confirmation.process} action={confirmation.action}
+        locked={publication.processesLocked || busy !== null}
+        onConfirm={() => executeAction(confirmation.process, confirmation.action)} onClose={() => setConfirmation(null)} />}
+      {linkProcess && <ProcessProjectDialog process={linkProcess} busy={projectSaving || publication.processesLocked}
         onSave={saveProject} onClose={() => setLinkProcess(null)} onSessionExpired={sessionExpired} />}
       <dialog
         ref={processDialog}
@@ -532,14 +562,14 @@ export function App() {
               placeholder="C:\\servicos\\minha-app\\ecosystem.config.js"
               aria-describedby="ecosystem-help"
               required
-              disabled={addingProcess}
+              disabled={addingProcess || publication.processesLocked}
               className="mt-2 w-full rounded-lg border border-line bg-canvas px-3 py-2.5 font-mono text-sm outline-none focus:border-focus"
             />
           </label>
           <button
             type="button"
             onClick={selectEcosystem}
-            disabled={addingProcess || pickingFile}
+            disabled={addingProcess || pickingFile || publication.processesLocked}
             className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm text-action-secondary hover:bg-hover"
           >
             <FolderOpen size={16} aria-hidden="true" />
@@ -564,7 +594,7 @@ export function App() {
             </button>
             <button
               type="submit"
-              disabled={addingProcess || pickingFile || !ecosystemPath.trim()}
+              disabled={addingProcess || pickingFile || publication.processesLocked || !ecosystemPath.trim()}
               className="rounded-lg bg-action px-4 py-2.5 text-sm font-semibold text-on-action hover:bg-action-hover"
             >
               {addingProcess ? t("Iniciando…") : t("Adicionar processo")}

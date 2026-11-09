@@ -814,6 +814,14 @@ test("network access, MongoDB authentication, builds, deployment and persisted l
     },
   );
 
+  await t.test("process actions reject a reused identity before executing PM2", async () => {
+    const count = (await readFile(pm2Calls, "utf8")).split("\n").length;
+    const response = await request("/api/processes/3/stop", { method: "POST", body: JSON.stringify({ name: "old-app", namespace: "default" }) });
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).message, /processo mudou/);
+    assert.equal((await readFile(pm2Calls, "utf8")).split("\n").length, count);
+  });
+
   await t.test("revokes session when its MongoDB user is removed", async () => {
     await db.users.deleteOne({ username: "admin" });
     assert.equal((await request("/api/auth/me")).status, 401);

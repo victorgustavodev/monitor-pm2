@@ -14,6 +14,17 @@ let pendingLabel,
   labelSaveCount = 0;
 let pendingProjectBuild;
 let pendingPublication;
+let pendingRole, roleSaveFails = false;
+let publicationRows = [], operationNumber = 0;
+const publicationStreams = [];
+function broadcastPublications(rows) {
+  publicationRows = rows;
+  for (const stream of publicationStreams) if (stream.readyState !== 2) stream.emit("publications", rows);
+}
+function finishPublication(id, status, logs = []) {
+  broadcastPublications(publicationRows.map(row => row.id === id ? { ...row, status, cancellable: false, canCancel: false,
+    percent: status === "succeeded" ? 100 : row.percent, stage: status === "succeeded" ? "Build publicado" : status === "cancelled" ? "Publicação cancelada" : "Falha ao publicar o build", logs } : row));
+}
 let pendingSettings;
 let pendingProjectUpdate, pendingProjectDelete;
 let localEcosystem = null, ecosystemReadError = 0;
@@ -100,7 +111,8 @@ before(
       readyState = 1;
       constructor(url) {
         super();
-        if (url.includes("/build-operations/")) buildStreams.push(this);
+        if (url === "/api/build-operations/stream") { publicationStreams.push(this); queueMicrotask(() => this.emit("publications", publicationRows)); }
+        else if (url.includes("/build-operations/")) buildStreams.push(this);
         else { assert.equal(url, "/api/processes/stream"); streams.push(this); }
       }
       close() {
@@ -129,10 +141,23 @@ before(
         method: options.method || "GET",
         body: options.body,
       });
+      const operationId = new URL(String(url), "http://localhost").searchParams.get("operationId");
       url = String(url).replace(/\?operationId=.*$/, "");
-      if (url.endsWith("/build-operations") && options.method === "POST") return json({ id: "operation-1", percent: 0, stage: "Enviando pacote", status: "running", cancellable: true, logs: [] }, 201);
-      if (url.endsWith("/operation-1/cancel")) return json({ id: "operation-1", percent: 60, stage: "Cancelando", status: "running", cancellable: false, logs: [] });
-      if (/\/builds\/[^/]+\/deploy$/.test(url) && options.method === "POST") return new Promise(done => { pendingPublication = (status, message) => done(json({ message }, status)); });
+      if (url.endsWith("/build-operations") && options.method === "POST") {
+        const projectId = url.split("/")[3];
+        const row = { id: `operation-${++operationNumber}`, projectId, projectName: projectRows.find(project => project._id === projectId)?.name || "Projeto", username: "tester", canCancel: true, percent: 0, stage: "Enviando pacote", status: "running", cancellable: true, logs: [] };
+        broadcastPublications([...publicationRows, row]);
+        return json(row, 201);
+      }
+      if (/\/build-operations\/[^/]+\/cancel$/.test(url)) {
+        const id = url.split("/").at(-2);
+        broadcastPublications(publicationRows.map(row => row.id === id ? { ...row, stage: "Cancelando publicação", cancellable: false, canCancel: false } : row));
+        return json(publicationRows.find(row => row.id === id));
+      }
+      if (/\/builds\/[^/]+\/deploy$/.test(url) && options.method === "POST") {
+        pendingPublication = (status, message) => finishPublication(operationId, status === 409 ? "cancelled" : status >= 400 ? "failed" : "succeeded", message ? [message] : []);
+        return json(publicationRows.find(row => row.id === operationId), 202);
+      }
       if (url === "/api/auth/me")
         return json({
           username: "tester",
@@ -174,7 +199,7 @@ before(
             done(json(saved));
           };
         });
-      if (url === "/api/processes/1/restart" && options.method === "POST")
+      if (/^\/api\/processes\/1\/(restart|stop|delete)$/.test(url) && options.method === "POST")
         return new Promise((resolve) => {
           pendingAction = () => resolve(new Response(null, { status: 204 }));
         });
@@ -190,9 +215,14 @@ before(
           {
             id: "tester",
             username: "tester",
+            role: sessionRole,
             createdAt: "2026-01-01T00:00:00Z",
           },
         ]);
+      if (/\/api\/users\/[^/]+\/role$/.test(url)) return new Promise(done => {
+        pendingRole = () => done(roleSaveFails ? json({ message: "Não é possível alterar este perfil." }, 409)
+          : json({ id: "tester", username: "tester", role: JSON.parse(options.body).role, createdAt: "2026-01-01T00:00:00Z" }));
+      });
       if (url === "/api/versions") return json([]);
       if (url === "/api/settings/retention" && options.method === "PUT")
         return new Promise((done) => {
@@ -342,7 +372,8 @@ before(
             project.buildCount++;
             project.nextBuildNumber++;
             project.activeBuildId = build._id;
-            done(json(build, 201));
+            finishPublication(operationId, "succeeded");
+            done(json(build, 202));
           };
         });
       if (
@@ -899,9 +930,9 @@ test("projects browse local files and keep build publication and history inside 
     ),
   );
   assert.ok(pendingProjectBuild);
-  assert.ok(document.querySelector(".build-progress-modal[open]"));
-  await act(async () => buildStreams.at(-1).emit("progress", { id: "operation-1", percent: 60, stage: "Atualizando arquivos do projeto", status: "running", cancellable: true, logs: ["Pacote recebido"] }));
-  assert.equal(document.querySelector(".build-progress-modal progress").value, 60);
+  assert.ok(document.querySelector(".build-progress-panel"));
+  await act(async () => broadcastPublications(publicationRows.map(row => ({ ...row, percent: 60, stage: "Atualizando arquivos do projeto", logs: ["Pacote recebido"] }))));
+  assert.equal(document.querySelector(".build-progress-panel progress").value, 60);
   assert.ok(
     [
       ...document.querySelectorAll(
@@ -915,8 +946,8 @@ test("projects browse local files and keep build publication and history inside 
     /Extraindo e publicando/,
   );
   await act(async () => pendingProjectBuild());
-  assert.equal(document.querySelector(".build-progress-modal progress").value, 100);
-  await act(async () => button("Fechar").click());
+  assert.equal(document.querySelector(".build-progress-panel progress").value, 100);
+  await act(async () => document.querySelector('[aria-label="Fechar progresso de Projeto X"]').click());
   assert.equal(document.querySelector(".project-form"), null);
   assert.match(
     document.querySelector(".build-history").textContent,
@@ -1056,31 +1087,106 @@ test("project documentation is saved independently and ecosystem configuration i
   await go("Home");
 });
 
-test("publication modal waits for server cancellation and keeps PM2 failures visible", async () => {
+test("background publications survive navigation, run across projects and block conflicting actions for all users", async () => {
   await go("Projetos");
   const projectButton = text => [...document.querySelectorAll("main button")].find(button => button.textContent.trim() === text);
   await act(async () => projectButton("Todos os projetos").click());
   await act(async () => projectButton("Projeto X").click());
   await act(async () => document.querySelector("#project-tab-builds").click());
   const publish = () => document.querySelector('.build-history button[aria-label^="Publicar "]');
-  const modalButton = text => [...document.querySelectorAll('.build-progress-modal button')].find(button => button.textContent.trim() === text);
+  const panelButton = text => [...document.querySelectorAll('.build-progress-panel button')].find(button => button.textContent.trim() === text);
   await act(async () => publish().click());
-  await act(async () => buildStreams.at(-1).emit("progress", { id: "operation-1", percent: 60, stage: "Copying", status: "running", cancellable: true, logs: ["Package received"] }));
-  await act(async () => modalButton("Cancelar build").click());
-  assert.ok(requests.some(request => request.url.endsWith("/operation-1/cancel")));
-  assert.equal(document.querySelector('.build-progress-modal button').disabled, true);
-  assert.ok([...document.querySelectorAll('nav[aria-label] button')].some(button => button.disabled));
+  const cancelledId = publicationRows.at(-1).id;
+  await act(async () => broadcastPublications(publicationRows.map(row => row.id === cancelledId ? { ...row, percent: 60, stage: "Copying", logs: ["Package received"] } : row)));
+  await act(async () => panelButton("Cancelar build").click());
+  assert.ok(requests.some(request => request.url.endsWith(`/${cancelledId}/cancel`)));
+  assert.equal(panelButton("Cancelar build"), undefined);
+  assert.ok([...document.querySelectorAll('nav[aria-label] button')].every(button => !button.disabled));
   await act(async () => pendingPublication(409, "Cancelled; files restored"));
-  assert.equal(document.querySelector('.build-progress-modal pre'), null);
-  await act(async () => modalButton("Fechar").click());
+  await act(async () => document.querySelector('[aria-label="Fechar progresso de Projeto X"]').click());
   await act(async () => publish().click());
-  await act(async () => buildStreams.at(-1).emit("progress", { id: "operation-1", percent: 85, stage: "PM2", status: "running", cancellable: false, logs: [] }));
-  assert.equal(modalButton("Cancelar build").disabled, true);
-  await act(async () => pendingPublication(502, "Script not found: <script>main.js</script>"));
-  assert.ok(document.querySelector('.build-progress-modal[open]'));
-  assert.match(document.querySelector('.build-progress-modal pre').textContent, /Script not found/);
-  assert.equal(document.querySelector('.build-progress-modal script'), null);
-  await act(async () => modalButton("Fechar").click());
+  const finishFirst = pendingPublication;
+  await go("Home");
+  assert.ok([...document.querySelectorAll(".process-action")].every(button => button.disabled));
+  assert.ok([...document.querySelectorAll("main button")].find(button => button.textContent.includes("Adicionar processo")).disabled);
+  assert.ok(document.querySelector(".build-progress-panel"));
+  await go("Projetos");
+  await act(async () => projectButton("Todos os projetos").click());
+  await act(async () => projectButton("Projeto Y").click());
+  assert.equal(projectButton("Fazer novo build").disabled, false);
+  await act(async () => projectButton("Fazer novo build").click());
+  const form = document.querySelector(".project-form");
+  form.querySelector('[name="name"]').value = "parallel-build";
+  form.querySelector('[name="comments"]').value = "Parallel project build";
+  await act(async () => form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  assert.equal(document.querySelectorAll(".build-progress-item.running").length, 2);
+  await act(async () => pendingProjectBuild());
+  await act(async () => projectButton("Todos os projetos").click());
+  await act(async () => projectButton("Projeto X").click());
+  assert.equal(projectButton("Fazer novo build").disabled, true);
+  await act(async () => finishFirst(502, "Script not found: <script>main.js</script>"));
+  assert.match(document.querySelector('.build-progress-item.failed pre').textContent, /Script not found/);
+  assert.equal(document.querySelector('.build-progress-panel script'), null);
+  assert.equal(projectButton("Fazer novo build").disabled, false);
+  // A job submitted by another operator must impose the same locks.
+  const remote = { id: "remote", projectId: projectRows[0]._id, projectName: "Projeto X", username: "another-user", canCancel: false, percent: 40, stage: "Validando arquivos", status: "running", cancellable: true, logs: [] };
+  await act(async () => broadcastPublications([...publicationRows, remote]));
+  assert.equal(projectButton("Fazer novo build").disabled, true);
+  assert.equal(panelButton("Cancelar build"), undefined);
+  await go("Home");
+  assert.ok([...document.querySelectorAll(".process-action")].every(button => button.disabled));
+  await act(async () => finishPublication("remote", "succeeded"));
+  assert.ok([...document.querySelectorAll(".process-action")].every(button => !button.disabled));
+  await act(async () => publicationStreams.at(-1).onerror());
+  assert.ok([...document.querySelectorAll(".process-action")].every(button => button.disabled));
+  assert.match(document.querySelector(".build-progress-panel").textContent, /Aguardando reconexão/);
+  await act(async () => broadcastPublications(publicationRows));
+  assert.ok([...document.querySelectorAll(".process-action")].every(button => !button.disabled));
+});
+
+test("stop and delete require a red confirmation dialog and prevent repeated submissions", async () => {
+  await go("Home");
+  const dialog = () => document.querySelector(".process-confirmation");
+  for (const [action, label] of [["stop", "Parar"], ["delete", "Remover"]]) {
+    const count = requests.filter(row => row.url.endsWith(`/${action}`)).length;
+    await act(async () => document.querySelector(`[aria-label="${label} api-service"]`).click());
+    assert.ok(dialog().hasAttribute("open"));
+    assert.ok(dialog().querySelector(".process-confirm-danger"));
+    assert.match(dialog().textContent, /api-service/);
+    assert.equal(requests.filter(row => row.url.endsWith(`/${action}`)).length, count);
+    await act(async () => [...dialog().querySelectorAll("button")].find(button => button.textContent === "Cancelar").click());
+    assert.equal(dialog(), null);
+    await act(async () => document.querySelector(`[aria-label="${label} api-service"]`).click());
+    const confirm = [...dialog().querySelectorAll("button")].find(button => button.textContent.startsWith("Confirmar"));
+    await act(async () => { confirm.click(); confirm.click(); });
+    assert.equal(requests.filter(row => row.url.endsWith(`/${action}`)).length, count + 1);
+    assert.equal(confirm.disabled, true);
+    const sent = JSON.parse(requests.findLast(row => row.url.endsWith(`/${action}`)).body);
+    assert.deepEqual(sent, { name: "api-service", namespace: "default" });
+    await act(async () => pendingAction());
+    assert.equal(dialog(), null);
+  }
+});
+
+test("Home live indicator reflects successful collections, pause and reconnection", async () => {
+  await go("Home");
+  const indicator = () => document.querySelector(".live-indicator");
+  await act(async () => streams.at(-1).emit("live", { collectedAt: new Date().toISOString() }));
+  assert.ok(indicator().classList.contains("active"));
+  assert.equal(indicator().getAttribute("aria-pressed"), "true");
+  const oldStream = streams.at(-1);
+  const buildStream = publicationStreams.at(-1);
+  await act(async () => indicator().click());
+  assert.ok(indicator().classList.contains("paused"));
+  assert.equal(oldStream.readyState, 2);
+  assert.equal(buildStream.readyState, 1, "Pausing metrics must preserve publication locks and progress");
+  await act(async () => indicator().click());
+  assert.ok(indicator().classList.contains("reconnecting"));
+  await act(async () => streams.at(-1).emit("processes", processes));
+  assert.ok(indicator().classList.contains("active"));
+  await act(async () => streams.at(-1).onerror());
+  assert.ok(indicator().classList.contains("reconnecting"));
+  await act(async () => streams.at(-1).emit("processes", processes));
 });
 
 test("Home list and cards show plain port numbers without access links", async () => {
@@ -1276,6 +1382,26 @@ test("project editing saves changes and deletion requires the project name while
   );
   assert.equal(navigation("Home").disabled, false);
   await go("Home");
+});
+
+test("admins edit user roles with feedback and self-demotion removes admin navigation", async () => {
+  await go("Usuários");
+  const select = document.querySelector('[aria-label="Perfil de tester"]');
+  await act(async () => { select.value = "user"; select.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
+  const save = () => document.querySelector('[aria-label="Salvar perfil de tester"]');
+  roleSaveFails = true;
+  await act(async () => save().click());
+  assert.equal(navigation("Home").disabled, true);
+  await act(async () => pendingRole());
+  assert.match(document.querySelector('[role="alert"]').textContent, /alterar este perfil/);
+  assert.equal(save().disabled, false);
+  roleSaveFails = false;
+  await act(async () => save().click());
+  assert.equal(JSON.parse(requests.at(-1).body).role, "user");
+  await act(async () => pendingRole());
+  assert.equal(document.querySelector("h1").textContent, "Olá, tester");
+  assert.equal(navigation("Usuários"), undefined);
+  await act(async () => root.render(createElement(App, { key: "after-role-edit" })));
 });
 
 test("regular users can open settings but cannot see or fetch user administration", async () => {

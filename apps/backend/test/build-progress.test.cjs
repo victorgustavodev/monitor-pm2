@@ -3,13 +3,48 @@ const assert = require("node:assert/strict");
 const { mkdtemp, mkdir, writeFile, readFile, rm } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
-const { createBuildOperation, getBuildOperation, cancelBuildOperation, runBuildOperation } = require("../dist/projects/build-progress");
+const { createBuildOperation, getBuildOperation, cancelBuildOperation, runBuildOperation, submitBuildOperation, activeBuildOperation, withManualProcessAction, listBuildOperations } = require("../dist/projects/build-progress");
 const { prepareDeployment, restoreDeployment } = require("../dist/projects/project-deploy");
 
 function operation() {
   const state = createBuildOperation("project", "tester");
   return getBuildOperation(state.id, "project", "tester");
 }
+
+test("reservations prevent competing users and process commands while allowing independent projects", async () => {
+  const first = createBuildOperation("one", "alice");
+  const second = createBuildOperation("two", "bob");
+  try {
+    assert.throws(() => createBuildOperation("one", "bob"), /publicação em andamento/);
+    await assert.rejects(withManualProcessAction(async () => {}), /bloqueadas/);
+    assert.equal(listBuildOperations("bob").find(row => row.id === first.id).canCancel, false);
+    assert.equal(listBuildOperations("bob").find(row => row.id === second.id).canCancel, true);
+  } finally {
+    cancelBuildOperation(getBuildOperation(first.id, "one", "alice"));
+    cancelBuildOperation(getBuildOperation(second.id, "two", "bob"));
+  }
+  await withManualProcessAction(async () => {
+    assert.throws(() => createBuildOperation("three", "alice"), /ações dos processos/);
+  });
+});
+
+test("abandoned reservations expire but uploads that have started retain their lock", () => {
+  const abandoned = createBuildOperation("abandoned", "alice");
+  const uploaded = createBuildOperation("uploading", "bob");
+  const upload = getBuildOperation(uploaded.id, "uploading", "bob");
+  submitBuildOperation(upload);
+  assert.throws(() => submitBuildOperation(upload), /já foi iniciada/);
+  const now = Date.now;
+  try {
+    Date.now = () => now() + 31 * 60_000;
+    assert.equal(activeBuildOperation("abandoned"), undefined);
+    assert.equal(activeBuildOperation("uploading"), upload);
+    assert.equal(getBuildOperation(abandoned.id, "abandoned", "alice").state.status, "cancelled");
+  } finally {
+    Date.now = now;
+    cancelBuildOperation(upload);
+  }
+});
 test("publication progress is scoped and becomes non-cancellable at PM2 commit", async () => {
   const op = operation();
   assert.throws(() => getBuildOperation(op.state.id, "another", "tester"), /não encontrada/);

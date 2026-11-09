@@ -16,10 +16,11 @@ import { withProjectConfiguration } from "../projects/project-operations";
 import { processIdentity, processScope, resolveProcessProjects } from "./process-projects";
 import { processLabels, processProjects, projects } from "../common/database";
 import type { Pm2Row } from "./pm2-output";
+import { withManualProcessAction } from "../projects/build-progress";
 
 export const startEcosystem = (
   ...args: Parameters<typeof startEcosystemInternal>
-) => withArtifactAccess(() => startEcosystemInternal(...args));
+) => withManualProcessAction(() => withArtifactAccess(() => startEcosystemInternal(...args)));
 export const deployEcosystem = (
   ...args: Parameters<typeof deployEcosystemInternal>
 ) => withArtifactAccess(() => deployEcosystemInternal(...args));
@@ -337,7 +338,7 @@ export async function getProjectProcesses(root: string, projectId?: string) {
 }
 
 export async function stopProjectProcesses(root: string, revision: string, projectId?: string) {
-  return withArtifactAccess(async () => {
+  return withManualProcessAction(() => withArtifactAccess(async () => {
     const snapshot = await getProjectProcesses(root, projectId);
     if (snapshot.revision !== revision)
       throw new HttpError(
@@ -359,14 +360,21 @@ export async function stopProjectProcesses(root: string, revision: string, proje
     } finally {
       if (stopped) await run(["save", "--force"]);
     }
-  });
+  }));
 }
 
 async function processActionInternal(
   id: number,
   action: ProcessAction,
+  expected?: Record<string, unknown>,
 ): Promise<void> {
-  await assertExists(id);
+  const row = (await processRows()).find(process => process.pm_id === id);
+  if (!row) throw new HttpError(404, "Processo PM2 não encontrado.");
+  if (expected && (expected.name !== undefined || expected.namespace !== undefined)) {
+    const identity = processIdentity(row);
+    if (expected.name !== identity.name || expected.namespace !== identity.namespace)
+      throw new HttpError(409, "O processo mudou. Atualize a lista antes de executar a ação.");
+  }
   await run([action, String(id)]);
   if (action !== "delete") await run(["save", "--force"]);
 }

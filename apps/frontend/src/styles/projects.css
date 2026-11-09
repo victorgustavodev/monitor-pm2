@@ -695,29 +695,29 @@
   font-size: 12px;
 }
 .project-documentation-preview code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-.build-progress-modal {
-  width: min(560px, calc(100vw - 32px));
-  max-height: calc(100dvh - 48px);
-  overflow: auto;
-  margin: auto;
-  padding: 28px;
+.build-progress-panel {
+  position: fixed;
+  z-index: 40;
+  top: 16px;
+  right: 20px;
+  width: min(360px, calc(100vw - 32px));
   border: 1px solid var(--ds-color-line);
-  border-radius: 16px;
+  border-radius: 12px;
   color: var(--ds-color-content);
   background: var(--ds-color-surface);
   box-shadow: var(--ds-shadow-dialog);
+  overflow: hidden;
 }
-.build-progress-modal::backdrop { background: var(--ds-color-overlay); }
-.build-progress-modal h2 { margin: 0 0 16px; color: var(--ds-color-heading); font-size: 20px; }
-.build-progress-modal > p { margin-block: 12px; }
-.build-progress-modal > strong, .build-progress-modal > small { display: block; text-align: center; margin-top: 10px; }
-.build-progress-modal > small { color: var(--ds-color-muted); }
-.build-progress-modal progress { display: block; appearance: none; width: 100%; height: 14px; border: 0; border-radius: 20px; overflow: hidden; background: var(--ds-color-subtle); }
-.build-progress-modal progress::-webkit-progress-bar { background: var(--ds-color-subtle); }
-.build-progress-modal progress::-webkit-progress-value { background: var(--ds-color-success); border-radius: 20px; transition: width .2s; }
-.build-progress-modal progress::-moz-progress-bar { background: var(--ds-color-success); }
-.build-progress-modal details { margin-top: 24px; }
-.build-progress-modal summary { cursor: pointer; }
-.build-progress-modal pre { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--ds-color-subtle); border-radius: 8px; font-size: 12px; }
-.build-progress-actions { display: flex; justify-content: flex-end; margin-top: 24px; }
-@media (prefers-reduced-motion: reduce) { .build-progress-modal progress::-webkit-progress-value { transition: none; } }
+.build-progress-toggle { display: flex; align-items: center; gap: 8px; width: 100%; padding: 14px 16px; font-size: 13px; color: var(--ds-color-heading); }
+.build-progress-toggle > svg:last-child { margin-left: auto; }
+.build-progress-items { max-height: min(65dvh, 650px); overflow-y: auto; border-top: 1px solid var(--ds-color-line); }
+.build-progress-item { display: grid; gap: 9px; padding: 16px; font-size: 12px; overflow-wrap: anywhere; }
+.build-progress-item + .build-progress-item { border-top: 1px solid var(--ds-color-line); }
+.build-progress-item small { color: var(--ds-color-muted); }
+.build-progress-item.failed > p { color: var(--ds-color-danger); }
+.build-progress-item.succeeded > p { color: var(--ds-color-success); }
+.build-progress-item progress { width: 100%; height: 10px; accent-color: var(--ds-color-action); }
+.build-progress-item details summary { cursor: pointer; }
+.build-progress-item pre { max-height: 160px; margin-top: 8px; overflow: auto; white-space: pre-wrap; padding: 10px; background: var(--ds-color-canvas); border-radius: 6px; }
+.build-progress-item > button { justify-self: start; }
+@media (max-width: 767px) { .build-progress-panel { top: 100px; right: 16px; } }

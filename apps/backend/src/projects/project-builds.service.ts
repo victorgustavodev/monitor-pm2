@@ -373,7 +373,7 @@ async function createProjectBuildInternal(
         );
         throw error;
       }
-    });
+    }, control?.operationId);
   } catch (error) {
     if (error instanceof MongoServerError && error.code === 11000)
       throw new HttpError(
@@ -399,7 +399,7 @@ async function deployProjectBuildInternal(
       await getProjectBuild(project._id, rawBuild),
       username,
       control,
-    ),
+    ), control?.operationId,
   );
 }
 

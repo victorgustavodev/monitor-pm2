@@ -1,4 +1,4 @@
-import { MongoServerError } from "mongodb";
+import { MongoServerError, ObjectId } from "mongodb";
 import { env } from "../common/config";
 import { publicUser, users } from "../common/database";
 import { HttpError } from "../common/http-error";
@@ -46,6 +46,23 @@ export async function createUser(
       throw new HttpError(409, "Usuário já existe.");
     throw error;
   }
+}
+
+let changingRole = false;
+export async function updateUserRole(rawId: unknown, role: unknown, actor: string) {
+  if (typeof rawId !== "string" || !/^[a-f0-9]{24}$/i.test(rawId)) throw new HttpError(400, "ID de usuário inválido.");
+  if (role !== "admin" && role !== "user") throw new HttpError(400, "Perfil de usuário inválido.");
+  if (changingRole) throw new HttpError(409, "Aguarde a conclusão da outra alteração de perfil.");
+  changingRole = true;
+  try {
+    if (!(await users.findOne({ username: actor, role: "admin" }))) throw new HttpError(403, "Acesso restrito a administradores.");
+    const user = await users.findOne({ _id: new ObjectId(rawId) });
+    if (!user) throw new HttpError(404, "Usuário não encontrado.");
+    if (user.role === "admin" && role === "user" && await users.countDocuments({ role: "admin" }) <= 1)
+      throw new HttpError(409, "O painel precisa manter pelo menos um administrador.");
+    await users.updateOne({ _id: user._id }, { $set: { role } });
+    return publicUser({ ...user, role });
+  } finally { changingRole = false; }
 }
 
 export async function bootstrapUser() {

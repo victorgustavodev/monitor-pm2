@@ -1,5 +1,4 @@
-import { useBuildPublication } from "./useBuildPublication";
-import { BuildProgressModal } from "./components/BuildProgressModal";
+import type { BuildPublications } from "./useBuildPublication";
 import { t } from "../../i18n";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
@@ -34,14 +33,15 @@ export function Projects({
   onStarted,
   onSessionExpired,
   onBusyChange,
+  publication,
 }: {
   projectId: string | null;
   onSelectProject: (id: string | null) => void;
   onStarted: () => Promise<void>;
   onSessionExpired: () => void;
   onBusyChange: (busy: boolean) => void;
+  publication: BuildPublications;
 }) {
-  const publication = useBuildPublication();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [formBusy, setFormBusy] = useState(false);
@@ -55,6 +55,7 @@ export function Projects({
   const [revision, setRevision] = useState(0);
   const busy = formBusy || deployBusy;
   const selected = projects.find((project) => project._id === projectId);
+  const projectLocked = Boolean(selected && (selected.deploying || publication.isProjectBusy(selected._id)));
   const fail = useCallback(
     (reason: unknown) => {
       if (reason instanceof ApiError && reason.status === 401)
@@ -75,6 +76,9 @@ export function Projects({
       .catch(fail)
       .finally(() => setLoading(false));
   }, [load, fail]);
+  useEffect(() => {
+    if (publication.revision) void load().catch(fail);
+  }, [publication.revision, load, fail]);
   useEffect(() => {
     onBusyChange(busy);
   }, [busy, onBusyChange]);
@@ -117,10 +121,9 @@ export function Projects({
     setError("");
     setNotice("");
     try {
-      await publication.run(selected._id, `/api/projects/${selected._id}/builds`, data);
+      await publication.run(selected._id, `/api/projects/${selected._id}/builds`, data, selected.name);
       setShowBuild(false);
-      setNotice(t("Build publicado. A aplicação foi enviada ao PM2."));
-      await published();
+      setNotice(t("Publicação iniciada em segundo plano. Acompanhe o progresso no canto superior."));
     } catch (reason) {
       await load().catch(() => undefined);
       fail(reason);
@@ -211,7 +214,6 @@ export function Projects({
   );
   return (
     <div className="projects-content">
-      <BuildProgressModal publication={publication} />
       {error && (
         <p role="alert" className="project-message error">
           {error}
@@ -446,7 +448,7 @@ export function Projects({
             <div className="project-header-actions">
               <button
                 className="project-button secondary"
-                disabled={busy || selected.deploying}
+                disabled={busy || projectLocked}
                 onClick={() => {
                   setTab("settings");
                   setShowBuild(false);
@@ -464,7 +466,7 @@ export function Projects({
                   setError("");
                   setNotice("");
                 }}
-                disabled={busy || selected.deploying}
+                disabled={busy || projectLocked}
               >
                 <Upload size={17} />
                 {t("Fazer novo build")}
@@ -480,6 +482,7 @@ export function Projects({
               {selected.deploymentError}
             </p>
           )}
+          {projectLocked && <p className="project-message" role="status">{t("Este projeto está publicando. Novos builds e alterações ficam bloqueados até a conclusão.")}</p>}
           <div
             className="repository-tabs"
             role="tablist"
@@ -531,7 +534,7 @@ export function Projects({
                   <BuildForm
                     key={selected._id}
                     project={selected}
-                    busy={busy}
+                    busy={busy || projectLocked}
                     onSubmit={upload}
                     onCancel={() => setShowBuild(false)}
                   />
@@ -546,7 +549,9 @@ export function Projects({
                 <BuildHistory
                   projectId={selected._id}
                   revision={revision}
-                  disabled={formBusy || selected.deploying}
+                  disabled={formBusy || projectLocked}
+                  publication={publication}
+                  projectName={selected.name}
                   onBusyChange={setDeployBusy}
                   onPublished={published}
                   onSessionExpired={onSessionExpired}
@@ -557,7 +562,7 @@ export function Projects({
               <ProjectSettings
                 key={`${selected._id}:${selected.updatedAt}`}
                 project={selected}
-                busy={busy}
+                busy={busy || projectLocked}
                 onSave={update}
                 onPrepareDelete={prepareDelete}
                 onDelete={remove}
@@ -567,7 +572,7 @@ export function Projects({
               <ProjectDocumentation
                 key={`${selected._id}:${selected.updatedAt}`}
                 project={selected}
-                busy={busy}
+                busy={busy || projectLocked}
                 onSave={update}
               />
             )}
@@ -575,7 +580,7 @@ export function Projects({
               <ProjectEnvironment
                 key={selected._id}
                 project={selected}
-                busy={busy}
+                busy={busy || projectLocked}
                 onSave={update}
                 onBusyChange={setFormBusy}
                 onSessionExpired={onSessionExpired}

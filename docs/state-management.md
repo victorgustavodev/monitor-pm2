@@ -74,6 +74,12 @@ Veja `api-integration.md` para erros e contratos HTTP e `components.md` para sep
 
 A associação chega na mesma lista e no mesmo SSE que as métricas, sem polling adicional. O editor mantém seleção local e consulta o catálogo ao abrir. Após salvar, a resposta atualiza todas as instâncias da mesma identidade, inclusive com atualização ao vivo pausada. `mergeProcessLabels` também preserva vínculos contra snapshots anteriores à gravação; compara `projectUpdatedAt` e `projectObservedAt`. Uma coleta mais recente pode remover associações após exclusão de projeto ou mudança de pasta, mesmo sem um metadado explícito para aquele processo. A identificação inclui nome e namespace para não reaproveitar dados de outro processo com o mesmo ID.
 
+## Publicações globais
+
+O hook `useBuildPublication` vive em `App` e mantém tarefas separadas por ID, não um único progresso por tela. A lista vem do SSE global de publicações e permanece ativa mesmo com métricas pausadas. Jobs aceitos em segundo plano liberam navegação; apenas cadastros, salvamentos e o envio inicial continuam bloqueando a tela. O projeto em publicação fica indisponível para um novo build e alterações, inclusive se iniciado por outro usuário. A conexão de publicações ainda desconhecida/interrompida bloqueia ações conflitantes até sincronizar novamente. A conclusão atualiza projetos/histórico; métricas seguem respeitando a pausa da sessão.
+
+IDs de resultados dispensados são locais à sessão em memória. Tarefas em andamento não podem ser dispensadas. Não persista pacotes, logs, variáveis ou conteúdo de tarefas em `localStorage`.
+
 ## Prazo das versões
 
 A retenção começa desabilitada e é uma política global (`enabled`, `retentionDays`). O formulário só grava alterações ao salvar; uma escolha já salva permanece ao reabrir a tela. O vencimento usa a data de envio de cada versão, sem reiniciar a contagem ao alterar configurações ou republicar. Ativar ou reduzir o prazo também se aplica às versões existentes. A verificação interna ocorre a cada minuto e não é uma segunda preferência do usuário.

@@ -25,16 +25,19 @@ import {
   uploadProjectBuild,
 } from "./project-builds.service";
 import { projectBuildFolder } from "./project-storage";
-import { createBuildOperation, getBuildOperation, cancelBuildOperation, runBuildOperation, type BuildControl } from "./build-progress";
+import { isProjectOperationBusy } from "./project-operations";
+import { createBuildOperation, getBuildOperation, cancelBuildOperation, runBuildOperation, submitBuildOperation, listBuildOperations, buildEvents, type BuildControl } from "./build-progress";
 
 export const projectRoutes = Router();
+export const buildOperationRoutes = Router();
 const progressClients = new Set<Response>();
 export function closeBuildProgressStreams() {
   for (const response of progressClients) response.end();
 }
 projectRoutes.post("/:id/build-operations", async (request, response) => {
   const project = await getProject(request.params.id);
-  response.status(201).json(createBuildOperation(project._id.toHexString(), response.locals.username));
+  if (project.deployment || isProjectOperationBusy(project._id.toHexString())) throw new HttpError(409, "Já existe uma operação em andamento neste projeto. Aguarde a conclusão.");
+  response.status(201).json(createBuildOperation(project._id.toHexString(), response.locals.username, project.name));
 });
 projectRoutes.post("/:id/build-operations/:operationId/cancel", (request, response) => {
   const op = getBuildOperation(request.params.operationId, request.params.id, response.locals.username);
@@ -43,12 +46,27 @@ projectRoutes.post("/:id/build-operations/:operationId/cancel", (request, respon
 });
 projectRoutes.get("/:id/build-operations/:operationId/stream", (request, response) => {
   const op = getBuildOperation(request.params.operationId, request.params.id, response.locals.username);
+  progressStream(response, () => `event: progress\ndata: ${JSON.stringify(op.state)}\n\n`, op.events, "progress");
+});
+buildOperationRoutes.get("/", (_request, response) => response.json(listBuildOperations(response.locals.username)));
+buildOperationRoutes.get("/stream", (_request, response) => {
+  progressStream(response, () => `event: publications\ndata: ${JSON.stringify(listBuildOperations(response.locals.username))}\n\n`, buildEvents, "change");
+});
+function progressStream(response: Response, frame: () => string, events: typeof buildEvents, eventName: string) {
   response.set({ "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" });
   response.flushHeaders();
   progressClients.add(response);
+  let blocked = false, pending = false, sending = false;
   const send = () => {
-    if (!response.write(`event: progress\ndata: ${JSON.stringify(op.state)}\n\n`)) response.destroy();
+    if (response.destroyed || response.writableEnded) return;
+    if (blocked || sending) { pending = true; return; }
+    sending = true;
+    blocked = !response.write(frame());
+    sending = false;
+    if (!blocked && pending) { pending = false; queueMicrotask(send); }
   };
+  const drain = () => { blocked = false; if (pending) { pending = false; send(); } };
+  response.on("drain", drain);
   let checking = false;
   const heartbeat = setInterval(async () => {
     if (checking) return;
@@ -57,15 +75,15 @@ projectRoutes.get("/:id/build-operations/:operationId/stream", (request, respons
       if (!(await users.findOne({ username: response.locals.username }, { projection: { _id: 1 } }))) {
         response.write("event: session-expired\ndata: {}\n\n");
         response.end();
-      } else if (!response.write(": heartbeat\n\n")) response.destroy();
+      } else { send(); if (!blocked) blocked = !response.write(": heartbeat\n\n"); }
     } catch { response.end(); }
     finally { checking = false; }
   }, 15000);
   const expiry = setTimeout(() => { response.write("event: session-expired\ndata: {}\n\n"); response.end(); }, Math.max(0, response.locals.sessionExpiresAt - Date.now()));
-  op.events.on("progress", send);
-  response.on("close", () => { progressClients.delete(response); clearInterval(heartbeat); clearTimeout(expiry); op.events.off("progress", send); });
+  events.on(eventName, send);
+  response.on("close", () => { progressClients.delete(response); clearInterval(heartbeat); clearTimeout(expiry); events.off(eventName, send); response.off("drain", drain); });
   send();
-});
+}
 projectRoutes.get("/", async (_request, response) =>
   response.json(await listProjects()),
 );
@@ -127,24 +145,38 @@ projectRoutes.post(
   "/:id/builds",
   async (request, response, next) => {
     response.locals.project = await getProject(request.params.id);
+    if (response.locals.project.deployment || isProjectOperationBusy(String(request.params.id))) throw new HttpError(409, "Já existe uma operação em andamento neste projeto. Aguarde a conclusão.");
+    const state = request.query.operationId ? null : createBuildOperation(String(request.params.id), response.locals.username, response.locals.project.name);
+    const op = getBuildOperation(request.query.operationId || state?.id, String(request.params.id), response.locals.username);
+    submitBuildOperation(op);
+    response.locals.operation = op;
+    request.once("aborted", () => { if (!op.claimed) cancelBuildOperation(op); });
     next();
   },
-  uploadProjectBuild,
+  (request, response, next) => uploadProjectBuild(request, response, (error) => {
+    if (error) { cancelBuildOperation(response.locals.operation); next(error); }
+    else next();
+  }),
   async (request, response) => {
     const action = (control?: BuildControl) => createProjectBuild(response.locals.project, request.file, request.body, response.locals.username, control);
-    const operation = request.query.operationId;
-    try { response
-      .status(201)
-      .json(
-        operation ? await runBuildOperation(getBuildOperation(operation, String(request.params.id), response.locals.username), action) : await action(),
-      ); } finally { if (request.file) await rm(request.file.path, { force: true }); }
+    const op = response.locals.operation as ReturnType<typeof getBuildOperation>;
+    const task = runBuildOperation(op, action).finally(async () => { if (request.file) await rm(request.file.path, { force: true }); });
+    if (request.query.background === "true") {
+      void task.catch(() => undefined); // Outcome is retained in the operation and streamed to clients.
+      response.status(202).json(op.state);
+    } else response.status(201).json(await task);
   },
 );
 projectRoutes.post("/:id/builds/:buildId/deploy", async (request, response) => {
+  const project = await getProject(request.params.id);
+  if (project.deployment || isProjectOperationBusy(project._id.toHexString())) throw new HttpError(409, "Já existe uma operação em andamento neste projeto. Aguarde a conclusão.");
+  const state = request.query.operationId ? null : createBuildOperation(project._id.toHexString(), response.locals.username, project.name);
+  const op = getBuildOperation(request.query.operationId || state?.id, project._id.toHexString(), response.locals.username);
+  submitBuildOperation(op);
   const action = (control?: BuildControl) => deployProjectBuild(request.params.id, request.params.buildId, response.locals.username, control);
-  response.json(
-    request.query.operationId ? await runBuildOperation(getBuildOperation(request.query.operationId, request.params.id, response.locals.username), action) : await action(),
-  );
+  const task = runBuildOperation(op, action);
+  if (request.query.background === "true") { void task.catch(() => undefined); response.status(202).json(op.state); }
+  else response.json(await task);
 });
 projectRoutes.get(
   "/:id/builds/:buildId/archive",

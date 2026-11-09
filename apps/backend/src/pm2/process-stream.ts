@@ -48,6 +48,10 @@ export function createProcessStream(
     }
     if (!clients.size) return;
     snapshot = frame;
+    if (frame.startsWith("event: processes")) {
+      const live = `event: live\ndata: ${JSON.stringify({ collectedAt: new Date().toISOString() })}\n\n`;
+      for (const response of clients.keys()) write(response, live);
+    }
     if (nextSignature === signature) return;
     signature = nextSignature;
     for (const response of clients.keys()) write(response, frame);

@@ -27,7 +27,8 @@ import {
   versions,
   type LogRecord,
 } from "./common/database";
-import { bootstrapUser, createUser } from "./auth/users.service";
+import { bootstrapUser, createUser, updateUserRole } from "./auth/users.service";
+import { withManualProcessAction } from "./projects/build-progress";
 import {
   saveBuild,
   startVersion,
@@ -36,7 +37,7 @@ import {
   versionId,
 } from "./versions/versions.service";
 import { archiveExtension } from "./versions/archive-format";
-import { projectRoutes, closeBuildProgressStreams } from "./projects/projects.routes";
+import { projectRoutes, buildOperationRoutes, closeBuildProgressStreams } from "./projects/projects.routes";
 import {
   listProjectBuilds,
   recoverProjectBuilds,
@@ -151,6 +152,7 @@ app.get("/api/auth/me", authenticate, (_request, response) =>
 );
 
 app.use("/api/projects", authenticate, projectRoutes);
+app.use("/api/build-operations", authenticate, buildOperationRoutes);
 app.get("/api/builds", authenticate, async (request, response) =>
   response.json(
     await listProjectBuilds(request.query.projectId, request.query.page),
@@ -188,6 +190,9 @@ app.post(
       );
   },
 );
+app.put("/api/users/:id/role", authenticate, requireAdmin, async (request, response) => {
+  response.json(await updateUserRole(request.params.id, request.body?.role, response.locals.username));
+});
 app.get("/api/logs", authenticate, async (request, response) => {
   const filter: Filter<LogRecord> = {};
   if (request.query.kind !== undefined) {
@@ -253,15 +258,15 @@ app.get("/api/processes", authenticate, async (_request, response) =>
   response.json(await listProcesses()),
 );
 app.put("/api/processes/:id/project", authenticate, async (request, response) => {
-  response.json(await setProcessProject(parseId(request.params.id), request.body, response.locals.username));
+  response.json(await withManualProcessAction(() => setProcessProject(parseId(request.params.id), request.body, response.locals.username)));
 });
 app.put("/api/processes/:id/label", authenticate, async (request, response) => {
   response.json(
-    await setProcessLabel(
+    await withManualProcessAction(() => setProcessLabel(
       parseId(request.params.id),
       request.body,
       response.locals.username,
-    ),
+    )),
   );
 });
 app.get("/api/processes/stream", authenticate, (_request, response) => {
@@ -281,7 +286,7 @@ app.post("/api/ecosystems/pick", authenticate, async (_request, response) => {
   response.json({ path: await pickEcosystem() });
 });
 app.post("/api/ecosystems", authenticate, async (request, response) => {
-  await startEcosystem(request.body?.path);
+  await withManualProcessAction(() => startEcosystem(request.body?.path));
   response.status(204).end();
 });
 app.get("/api/processes/:id/logs", authenticate, async (request, response) => {
@@ -298,7 +303,7 @@ app.post(
   async (request, response) => {
     const action = request.params.action as ProcessAction;
     if (!actions.has(action)) throw new HttpError(400, "Ação inválida.");
-    await processAction(parseId(request.params.id), action);
+    await withManualProcessAction(() => processAction(parseId(request.params.id), action, request.body));
     response.status(204).end();
   },
 );

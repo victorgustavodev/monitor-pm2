@@ -27,6 +27,7 @@ import {
   withProjectOperation,
 } from "./project-operations";
 import { pm2Configuration } from "./pm2-configuration";
+import { activeBuildOperation } from "./build-progress";
 
 export function projectId(raw: unknown) {
   if (typeof raw !== "string" || !/^[a-f0-9]{24}$/i.test(raw))
@@ -55,7 +56,7 @@ export function publicProject(project: WithId<ProjectRecord>, buildCount = 0) {
   return {
     ...record,
     buildCount,
-    deploying: Boolean(deployment || project.deleting),
+    deploying: Boolean(deployment || project.deleting || activeBuildOperation(project._id.toHexString())),
     pathToRunPm2: resolve(project.rootPath, project.pm2ConfigPath),
   };
 }

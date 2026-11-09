@@ -31,6 +31,7 @@ let failDeployment = false,
   holdDeployment,
   releaseDeployment;
 const deployments = [];
+const heldDeployments = new Map();
 let managedProject,
   referencedPaths = [],
   pm2Unavailable = false;
@@ -79,7 +80,9 @@ before(
       if (holdDeployment)
         await new Promise((done) => {
           releaseDeployment = done;
+          heldDeployments.set(path, done);
         });
+      heldDeployments.delete(path);
       if (failDeployment) throw new Error("Falha simulada no PM2.");
     };
     const main = require("../dist/main");
@@ -95,6 +98,7 @@ before(
 
 after(async () => {
   releaseDeployment?.();
+  for (const release of heldDeployments.values()) release();
   if (server) await new Promise((done) => server.close(done));
   await mainModule?.flushAudit();
   await db?.mongo.close();
@@ -133,12 +137,13 @@ function upload(
   entries,
   comments = "Atualização da aplicação para esta versão.",
   operationId,
+  background = false,
 ) {
   const data = new FormData();
   data.set("name", name);
   data.set("comments", comments);
   data.set("build", new Blob([zip(entries)]), "release.zip");
-  const query = operationId ? `?operationId=${operationId}` : "";
+  const query = operationId ? `?operationId=${operationId}${background ? "&background=true" : ""}` : "";
   return request(`/api/projects/${id}/builds${query}`, { method: "POST", body: data });
 }
 const packageFiles = (version, wrapper = "") => [
@@ -1446,4 +1451,95 @@ test("invalid or unreadable active manifests block publication before changing l
   const state = await json(await request(`/api/projects/${entry._id}`));
   assert.equal(state.activeBuildId, original._id);
   assert.equal(state.deploying, false);
+});
+
+test("background builds reserve each project across users, return 202 and permit other projects concurrently", { timeout: 15000 }, async () => {
+  const { createSession } = require("../dist/auth/auth.service");
+  const { getBuildOperation } = require("../dist/projects/build-progress");
+  await db.users.insertOne({ username: "background-operator", role: "user", passwordHash: "unused", createdAt: new Date() });
+  const otherCookie = `pm2_session=${createSession("background-operator")}`;
+  const other = (path, options = {}) => fetch(origin + path, { ...options, headers: { cookie: otherCookie, "content-type": "application/json" } });
+  const entries = [];
+  holdDeployment = true;
+  try {
+    for (const label of ["one", "two"]) {
+      const entry = await json(await post("/api/projects", { name: `Background ${label}`, rootPath: resolve(directory, `background-${label}`) }), 201);
+      const operation = await json(await post(`/api/projects/${entry._id}/build-operations`, {}), 201);
+      entries.push({ entry, operation });
+      assert.equal((await other(`/api/projects/${entry._id}/build-operations`, { method: "POST", body: "{}" })).status, 409);
+      const state = await json(await request(`/api/projects/${entry._id}`));
+      assert.equal(state.deploying, true, "Reserve from upload creation, before file replacement starts");
+      await json(await upload(entry._id, "background", packageFiles(label), undefined, operation.id, true), 202);
+    }
+    for (let attempt = 0; attempt < 150 && heldDeployments.size < 2; attempt++) await new Promise(done => setTimeout(done, 25));
+    assert.equal(heldDeployments.size, 2, "Both independent publications reach PM2 before either is released");
+    const jobs = await json(await other("/api/build-operations"));
+    for (const { entry, operation } of entries) {
+      const job = jobs.find(job => job.id === operation.id);
+      assert.equal(job.status, "running"); assert.equal(job.projectId, entry._id);
+      assert.equal(job.canCancel, false);
+      assert.equal((await other(`/api/projects/${entry._id}/build-operations/${operation.id}/cancel`, { method: "POST" })).status, 404);
+      assert.equal((await upload(entry._id, "conflicting", packageFiles("conflict"))).status, 409);
+      assert.equal((await other(`/api/projects/${entry._id}/environment-files/.env`, { method: "PUT", body: JSON.stringify({ content: "PORT=3000", revision: null }) })).status, 409);
+    }
+    for (const action of ["start", "restart", "stop", "delete"])
+      assert.equal((await other(`/api/processes/1/${action}`, { method: "POST" })).status, 409);
+    assert.equal((await other("/api/ecosystems", { method: "POST", body: JSON.stringify({ path: "unused" }) })).status, 409);
+    assert.equal((await other("/api/processes/1/label", { method: "PUT", body: JSON.stringify({ label: "blocked" }) })).status, 409);
+    assert.equal((await fetch(origin + "/api/build-operations")).status, 401);
+    const large = getBuildOperation(entries[0].operation.id, entries[0].entry._id, "admin");
+    large.state.logs.push("x".repeat(100000));
+    const stream = await other("/api/build-operations/stream");
+    const reader = stream.body.getReader();
+    let frame = "";
+    while (!frame.endsWith("\n\n")) {
+      const chunk = await reader.read();
+      assert.equal(chunk.done, false, "A large initial snapshot must not destroy the stream");
+      frame += new TextDecoder().decode(chunk.value);
+    }
+    assert.match(frame, /event: publications/);
+    assert.ok(frame.includes("x".repeat(100000)));
+    await reader.cancel();
+    large.state.logs.pop();
+  } finally {
+    holdDeployment = false;
+    for (const release of heldDeployments.values()) release();
+    for (let attempt = 0; attempt < 150 && entries.some(({ entry, operation }) => getBuildOperation(operation.id, entry._id, "admin").state.status === "running"); attempt++)
+      await new Promise(done => setTimeout(done, 25));
+  }
+  for (const { entry, operation } of entries) {
+    assert.equal(getBuildOperation(operation.id, entry._id, "admin").state.status, "succeeded");
+    assert.equal((await json(await request(`/api/projects/${entry._id}`))).deploying, false);
+  }
+  const failure = await json(await post("/api/projects", { name: "Background failure", rootPath: resolve(directory, "background-failure") }), 201);
+  const job = await json(await post(`/api/projects/${failure._id}/build-operations`, {}), 201);
+  await json(await upload(failure._id, "missing-config", [["main.js", "app"]], undefined, job.id, true), 202);
+  const failed = getBuildOperation(job.id, failure._id, "admin");
+  for (let attempt = 0; attempt < 150 && failed.state.status === "running"; attempt++) await new Promise(done => setTimeout(done, 25));
+  assert.equal(failed.state.status, "failed");
+  assert.match(failed.state.logs.join("\n"), /Configuração PM2 não encontrada/);
+  assert.equal((await json(await request(`/api/projects/${failure._id}`))).deploying, false);
+  const retry = await json(await post(`/api/projects/${failure._id}/build-operations`, {}), 201);
+  await json(await post(`/api/projects/${failure._id}/build-operations/${retry.id}/cancel`, {}));
+});
+
+test("roles can be edited only by admins and changes affect active sessions without exposing password hashes", async () => {
+  const { createSession } = require("../dist/auth/auth.service");
+  const admin = await db.users.findOne({ username: "admin" });
+  const account = await json(await post("/api/users", { username: "role-edit-target", password: "test-password-12345" }), 201);
+  const path = `/api/users/${account.id}/role`;
+  const cookieForUser = `pm2_session=${createSession(account.username)}`;
+  const userRequest = (target, options = {}) => fetch(origin + target, { ...options, headers: { cookie: cookieForUser, "content-type": "application/json" } });
+  assert.equal((await fetch(origin + path, { method: "PUT" })).status, 401);
+  assert.equal((await userRequest(path, { method: "PUT", body: JSON.stringify({ role: "admin" }) })).status, 403);
+  const change = (target, role) => request(target, { method: "PUT", body: JSON.stringify({ role }) });
+  assert.equal((await change(`/api/users/${admin._id}/role`, "user")).status, 409, "Keep the last administrator");
+  assert.equal((await change(path, "owner")).status, 400);
+  const promoted = await json(await change(path, "admin"));
+  assert.equal(promoted.role, "admin"); assert.equal("passwordHash" in promoted, false);
+  assert.equal((await userRequest("/api/users")).status, 200);
+  assert.equal((await json(await userRequest("/api/auth/me"))).role, "admin");
+  await json(await change(path, "user"));
+  assert.equal((await userRequest("/api/users")).status, 403);
+  assert.equal((await json(await userRequest("/api/auth/me"))).role, "user");
 });

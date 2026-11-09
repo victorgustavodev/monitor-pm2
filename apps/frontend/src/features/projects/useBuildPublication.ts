@@ -1,61 +1,91 @@
-import { useEffect, useRef, useState } from "react";
-import { api } from "../../services/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, ApiError } from "../../services/api";
 import { t } from "../../i18n";
 
 export type Publication = {
   id: string; percent: number; stage: string;
   status: "running" | "succeeded" | "failed" | "cancelled";
   cancellable: boolean; logs: string[];
+  projectId: string; projectName: string; username: string; canCancel: boolean;
 };
-export function useBuildPublication() {
-  const [progress, setProgress] = useState<Publication | null>(null);
-  const [connectionError, setConnectionError] = useState("");
-  const [cancelling, setCancelling] = useState(false);
-  const current = useRef<{ project: string; id: string } | null>(null);
-  const stream = useRef<EventSource | null>(null);
-  useEffect(() => () => stream.current?.close(), []);
+export type BuildPublications = ReturnType<typeof useBuildPublication>;
 
-  async function run(project: string, path: string, body?: FormData) {
-    setConnectionError(""); setCancelling(false);
-    setProgress({ id: "", percent: 0, stage: body ? "Enviando pacote" : "Preparando publicação", status: "running", cancellable: false, logs: [] });
-    try {
-      const operation = await api<Publication>(`/api/projects/${project}/build-operations`, { method: "POST" });
-      current.current = { project, id: operation.id };
-      setProgress(operation);
-      const events = new EventSource(`/api/projects/${project}/build-operations/${operation.id}/stream`);
-      stream.current = events;
-      events.addEventListener("progress", (event) => {
-        const next = JSON.parse((event as MessageEvent<string>).data) as Publication;
-        setProgress(next.status === "cancelled" ? { ...next, status: "running" } : next); setConnectionError("");
+export function useBuildPublication(enabled: boolean, username: string, onSessionExpired: () => void, onCompleted: () => Promise<void>) {
+  const [tasks, setTasks] = useState<Publication[]>([]);
+  const [ready, setReady] = useState(false);
+  const [connectionError, setConnectionError] = useState("");
+  const [revision, setRevision] = useState(0);
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  const [cancelling, setCancelling] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState<string[]>([]);
+  const pending = useRef(new Set<string>());
+  const known = useRef(new Map<string, Publication["status"]>());
+  const merge = useCallback((rows: Publication[]) => {
+    let finished = false;
+    for (const row of rows) {
+      if (known.current.get(row.id) === "running" && row.status !== "running") finished = true;
+      known.current.set(row.id, row.status);
+    }
+    setTasks(rows);
+    if (finished) { setRevision(value => value + 1); void onCompleted().catch(() => undefined); }
+  }, [onCompleted]);
+  useEffect(() => {
+    if (!enabled) {
+      setTasks([]); setReady(false); setDismissed([]); known.current.clear();
+      return;
+    }
+    let active = true;
+    let events: EventSource;
+    let retry: number | undefined;
+    function connect() {
+      events = new EventSource("/api/build-operations/stream");
+      events.addEventListener("publications", event => {
+        if (!active) return;
+        merge(JSON.parse((event as MessageEvent<string>).data) as Publication[]);
+        setReady(true); setConnectionError("");
       });
-      events.addEventListener("error", () => setConnectionError(t("Conexão de atualizações interrompida. Tentando reconectar…")));
-      events.addEventListener("session-expired", () => { events.close(); setConnectionError(t("Sua sessão expirou. Entre novamente.")); });
-      await api(`${path}?operationId=${encodeURIComponent(operation.id)}`, { method: "POST", body });
-      setProgress(previous => previous && ({ ...previous, percent: 100, stage: "Build publicado", status: "succeeded", cancellable: false }));
-    } catch (error) {
-      const wasCancelled = cancellingRef.current;
-      const operation = current.current;
-      if (operation) void api(`/api/projects/${operation.project}/build-operations/${operation.id}/cancel`, { method: "POST" }).catch(() => undefined);
-      setProgress(previous => previous && ({ ...previous, status: previous.status === "cancelled" || wasCancelled ? "cancelled" : "failed", cancellable: false, stage: wasCancelled ? "Publicação cancelada" : "Falha ao publicar o build", logs: [...previous.logs, error instanceof Error ? error.message : String(error)] }));
-      throw error;
-    } finally {
-      stream.current?.close(); stream.current = null; current.current = null;
-      setCancelling(false); cancellingRef.current = false;
+      events.addEventListener("session-expired", () => { if (active) { events.close(); onSessionExpired(); } });
+      events.onerror = () => {
+        if (!active) return;
+        setReady(false);
+        setConnectionError(t("Conexão de publicações interrompida. Aguardando reconexão…"));
+        void api("/api/auth/me").then(() => {
+          if (active && events.readyState === EventSource.CLOSED) retry = window.setTimeout(connect, 3000);
+        }).catch(reason => { if (active && reason instanceof ApiError && reason.status === 401) onSessionExpired(); });
+      };
     }
-  }
-  const cancellingRef = useRef(false);
-  async function cancel() {
-    const operation = current.current;
-    if (!operation || cancellingRef.current) return;
-    cancellingRef.current = true; setCancelling(true); setConnectionError("");
+    connect();
+    return () => { active = false; events.close(); window.clearTimeout(retry); };
+  }, [enabled, merge, onSessionExpired]);
+
+  async function run(project: string, path: string, body?: FormData, projectName = "Projeto") {
+    if (!ready || pending.current.has(project) || tasks.some(task => task.projectId === project && task.status === "running"))
+      throw new Error(t("Já existe uma publicação em andamento neste projeto ou a conexão está indisponível."));
+    pending.current.add(project); setSubmitting(values => [...values, project]);
+    let operation: Publication | undefined;
     try {
-      const next = await api<Publication>(`/api/projects/${operation.project}/build-operations/${operation.id}/cancel`, { method: "POST" });
-      // The publication request remains pending until server-side restoration finishes.
-      setProgress(previous => previous?.status === "running" ? { ...next, status: "running" } : previous);
+      operation = await api<Publication>(`/api/projects/${project}/build-operations`, { method: "POST" });
+      const row = { ...operation, projectId: project, projectName, username, canCancel: operation.cancellable };
+      setTasks(values => [...values.filter(value => value.id !== row.id), row]);
+      known.current.set(row.id, row.status);
+      await api(`${path}?operationId=${encodeURIComponent(operation.id)}&background=true`, { method: "POST", body });
     } catch (error) {
-      cancellingRef.current = false; setCancelling(false);
-      setConnectionError(error instanceof Error ? error.message : String(error));
-    }
+      if (operation && error instanceof ApiError && error.status !== 0)
+        void api(`/api/projects/${project}/build-operations/${operation.id}/cancel`, { method: "POST" }).catch(() => undefined);
+      throw error;
+    } finally { pending.current.delete(project); setSubmitting(values => values.filter(value => value !== project)); }
   }
-  return { progress, connectionError, cancelling, run, cancel, close: () => setProgress(null) };
+  async function cancel(task: Publication) {
+    if (cancelling.includes(task.id)) return;
+    setCancelling(values => [...values, task.id]);
+    try { await api(`/api/projects/${task.projectId}/build-operations/${task.id}/cancel`, { method: "POST" }); }
+    catch (error) { setConnectionError(error instanceof Error ? error.message : String(error)); }
+    finally { setCancelling(values => values.filter(value => value !== task.id)); }
+  }
+  return { tasks, ready, connectionError, revision, submitting, cancelling, run, cancel,
+    dismiss: (id: string) => setDismissed(values => [...values, id]),
+    visible: tasks.filter(task => task.status === "running" || !dismissed.includes(task.id)),
+    isProjectBusy: (id: string) => !ready || submitting.includes(id) || tasks.some(task => task.projectId === id && task.status === "running"),
+    processesLocked: !ready || submitting.length > 0 || tasks.some(task => task.status === "running"),
+  };
 }

@@ -65,6 +65,7 @@ test("shares collection, sends initial state and changes only, and stops when cl
   assert.equal(second.events("processes").length, 1);
   await until(() => calls >= 3 && first.frames.includes(": heartbeat\n\n"));
   assert.equal(first.events("processes").length, 1);
+  assert.ok(first.events("live").length >= 3, "Successful unchanged collections still report live activity");
   rows = [{ id: 1, cpu: 20 }];
   await until(() => first.events("processes").length === 2);
   assert.deepEqual(first.events("processes"), second.events("processes"));

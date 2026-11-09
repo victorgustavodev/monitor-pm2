@@ -117,7 +117,7 @@ O título da Home cumprimenta o usuário conectado com “Olá, nome”, respeit
 
 `features/projects/Projects.tsx` compõe cadastro e detalhe do projeto. Upload, publicação e histórico de builds ficam exclusivamente dentro do projeto; não há tela global de builds nem interface de uploads avulsos. Componentes exclusivos (`BuildForm`, `BuildHistory`, `ProjectFiles`, `ProjectSettings`) ficam em `features/projects/components/`; os tipos ficam em `features/projects/types.ts`. `ProjectSettings` contém edição e confirmação de exclusão pelo nome; a tela coordena chamadas e bloqueio de navegação. As chamadas reutilizam o cliente autenticado existente em `services/api.ts`. `BuildHistory` exige `projectId` e consulta somente o histórico desse projeto.
 
-Arquivos são lidos pela API a partir da pasta do projeto na VM. Publicação, validação de caminhos e execução PM2 pertencem ao backend. Cadastros, uploads e republicações bloqueiam ações conflitantes e a navegação até concluir. Consulte [Projetos](projects.md) para modelo de dados e contratos.
+Arquivos são lidos pela API a partir da pasta do projeto na VM. Publicação, validação de caminhos e execução PM2 pertencem ao backend. Cadastros e envios bloqueiam a navegação até o salvamento ou aceite do pacote. Após o aceite HTTP 202, publicações continuam em segundo plano e a navegação fica disponível. O projeto em publicação permanece bloqueado para alterações e novos builds de qualquer usuário; outros projetos podem publicar simultaneamente. Consulte [Projetos](projects.md) para modelo de dados e contratos.
 
 `ProjectDocumentation` compõe a aba Sobre o projeto, com edição e prévia segura de documentação (`documentation`) persistida no MongoDB. `ProjectEnvironment` compõe Variáveis de ambiente, consulta o ecosystem local e habilita `Pm2ConfigurationField` somente se o arquivo estiver ausente. `ProjectEnvironmentFiles` edita arquivos `.env` e variantes da raiz pela API autenticada, com revisão de conteúdo e bloqueio de navegação durante o salvamento. `ProjectSettings` mantém configurações gerais e exclusão em uma aba separada, acessível por Editar projeto.
 
@@ -131,7 +131,7 @@ O backend preserva o ecosystem existente no destino, inclusive em republicaçõe
 
 `src/i18n/` contém o catálogo e a preferência local de idioma; consulte [i18n.md](i18n.md). `ProcessPort` é reutilizado na lista e nos cards da Home e exibe os números das portas em texto, mantendo a distinção entre portas em escuta e configuradas.
 
-`App` renderiza `Management panel="users"` como destino independente quando o perfil é administrador; `Settings` mantém somente preferências gerais. O backend valida o papel armazenado no MongoDB em todas as requisições e protege GET/POST `/api/users` com `requireAdmin`. A visibilidade do frontend não substitui essa autorização.
+`App` renderiza `Management panel="users"` como destino independente quando o perfil é administrador; `Settings` mantém somente preferências gerais. O backend valida o papel armazenado no MongoDB em todas as requisições e protege GET/POST `/api/users` e PUT `/api/users/:id/role` com `requireAdmin`. O painel permite editar roles, mantém pelo menos um administrador e atualiza a navegação imediatamente após uma alteração do próprio perfil. A visibilidade do frontend não substitui essa autorização.
 
 1. Identifique o fluxo funcional que será alterado.
 2. Preserve o contrato público e os comportamentos atuais.
@@ -140,9 +140,17 @@ O backend preserva o ecosystem existente no destino, inclusive em republicaçõe
 5. Atualize testes e documentação da regra modificada.
 
 Consulte também `components.md`, `state-management.md` e `api-integration.md`.
-## Modal de publicação
+## Publicações em segundo plano
 
-`features/projects/useBuildPublication.ts` coordena a operação autenticada, SSE e cancelamento para uploads e republicações. `components/BuildProgressModal.tsx` apresenta o progresso centralizado, etapas, resultado e diagnóstico. O modal permanece aberto no resultado até Fechar. A navegação permanece bloqueada enquanto o POST aguarda a conclusão ou recuperação no servidor; Escape não oculta uma publicação em andamento. O componente utiliza tokens semânticos, progress nativo e dialog modal com contenção de foco.
+`App` mantém uma única instância de `features/projects/useBuildPublication.ts`, compartilhada por `Projects`, `BuildHistory` e `components/BuildProgressPanel.tsx`. O painel aparece no canto superior direito em todas as telas autenticadas, pode ser recolhido e mostra uma caixa por publicação, com etapas, progresso, resultado e diagnóstico. A assinatura SSE global restaura a lista após reconexão ou recarregamento; navegar não encerra publicações. Somente o autor pode cancelar, até o início da execução PM2. Resultados podem ser dispensados localmente; operações em andamento continuam visíveis.
+
+O backend reserva o projeto ao criar a operação, antes do upload, e mantém o bloqueio até publicação ou recuperação. A reserva sem envio expira após cinco minutos. `project-operations.ts` valida a identidade da operação que possui a reserva; edição/exclusão e gravação de `.env` não podem concorrer no mesmo projeto. Durante qualquer publicação, comandos PM2 e alterações de nome/vínculo pela API são bloqueados para todos os usuários; a UI também desabilita os botões dos processos. Projetos diferentes continuam publicando em paralelo. Os bloqueios são locais à instância do backend: execute uma única instância.
+
+## Confirmação de processos e atividade ao vivo
+
+`ProcessActionConfirmation` apresenta um dialog modal acessível antes de parar/excluir, com nome do processo, consequências em vermelho e foco inicial em Cancelar. A confirmação bloqueia cliques repetidos durante o envio; a API confere nome/namespace quando enviados para impedir ações sobre um ID reaproveitado. Reiniciar e iniciar mantêm o fluxo direto.
+
+A Home usa um indicador clicável para pausar/retomar a atualização ao vivo. O ponto pulsa a cada coleta bem-sucedida, inclusive quando as métricas não mudam, pelo evento SSE `live`. Os estados ativo, pausado e conectando são expressos por texto e tokens semânticos, com animação apenas sem preferência por movimento reduzido. A pausa de métricas não desativa a assinatura de publicações nem seus bloqueios.
 
 ## Vínculo de processos a projetos
 

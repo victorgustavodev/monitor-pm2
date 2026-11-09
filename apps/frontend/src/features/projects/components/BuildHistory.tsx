@@ -1,5 +1,4 @@
-import { useBuildPublication } from "../useBuildPublication";
-import { BuildProgressModal } from "./BuildProgressModal";
+import type { BuildPublications } from "../useBuildPublication";
 import { t } from "../../../i18n";
 import { useEffect, useState } from "react";
 import { Download, Package, Play, RefreshCw } from "lucide-react";
@@ -27,6 +26,8 @@ export function BuildHistory({
   onBusyChange,
   onPublished,
   onSessionExpired,
+  publication,
+  projectName,
 }: {
   projectId: string;
   revision?: number;
@@ -34,8 +35,9 @@ export function BuildHistory({
   onBusyChange: (busy: boolean) => void;
   onPublished: () => Promise<void>;
   onSessionExpired: () => void;
+  publication: BuildPublications;
+  projectName: string;
 }) {
-  const publication = useBuildPublication();
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<BuildPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,16 +74,16 @@ export function BuildHistory({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [projectId, page, revision, refresh, onSessionExpired]);
+  }, [projectId, page, revision, refresh, publication.revision, onSessionExpired]);
 
   async function publish(build: ProjectBuild) {
     setBusy(build._id);
     setError("");
     setNotice("");
     try {
-      await publication.run(build.projectId, `/api/projects/${build.projectId}/builds/${build._id}/deploy`);
+      await publication.run(build.projectId, `/api/projects/${build.projectId}/builds/${build._id}/deploy`, undefined, projectName);
       setNotice(
-        t("{0} publicado. A aplicação foi enviada ao PM2.", { 0: build.name }),
+        t("Publicação iniciada em segundo plano. Acompanhe o progresso no canto superior."),
       );
       await onPublished();
     } catch (reason) {
@@ -100,7 +102,6 @@ export function BuildHistory({
   const locked = disabled || Boolean(busy);
   return (
     <section className="build-history" aria-label={t("Histórico de builds")}>
-      <BuildProgressModal publication={publication} />
       <div className="project-section-heading">
         <div>
           <h2>{t("Histórico de builds")}</h2>

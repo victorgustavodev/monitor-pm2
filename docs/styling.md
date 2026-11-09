@@ -97,6 +97,8 @@ Configurações é um botão de expansão com `aria-expanded` e `aria-controls`.
 
 ## Transições de navegação
 
+O painel de publicações usa posição fixa no canto superior direito, largura máxima de 360 px, lista com rolagem e opção de recolher. Em telas menores, fica abaixo da navegação superior. Cada item usa progresso nativo e texto de estado; falhas usam tokens de perigo. O modal de confirmação de parada/exclusão usa `--ds-color-danger` para a mensagem e mantém Cancelar como foco inicial. O indicador de atualização ao vivo usa tokens de sucesso, atenção e neutros, com texto para os três estados. Spinner e pulso respeitam `prefers-reduced-motion`.
+
 As transições usam CSS, sem dependências ou atrasos artificiais nas ações. A área principal recebe entrada de 180 ms, com opacidade e deslocamento de 6 px, somente ao trocar de área (`key={view}`). Atualizações de métricas, busca, idioma e respostas da API não reiniciam a animação nem remontam a tela.
 
 O submenu permanece montado para animar expansão e recolhimento com linhas de grid (180 ms). Quando fechado, `inert` e `aria-hidden` impedem interação e acesso por teclado/leitor de tela imediatamente, enquanto a animação termina. A seta acompanha a expansão.

@@ -43,6 +43,10 @@ A pasta deve ser dedicada à aplicação: não pode se sobrepor à de outro proj
 
 ## Publicação
 
+O painel envia uploads e republicações com `background=true`: após o aceite do pacote (202), o backend continua o trabalho e a navegação é liberada. O progresso de todas as publicações aparece no canto superior direito, inclusive ao trocar de tela ou recarregar o painel. É possível recolher a caixa, consultar logs e dispensar resultados concluídos. Somente o autor pode cancelar uma publicação e o cancelamento fica indisponível ao iniciar a execução PM2.
+
+Criar a operação reserva o projeto antes do upload, impedindo novos builds, edição/exclusão e alterações de `.env` nesse projeto por qualquer usuário. Projetos diferentes podem publicar simultaneamente, com até cinco operações em andamento por usuário. Enquanto existir qualquer publicação, a UI bloqueia os botões dos processos e a API recusa comandos PM2 e alterações de nome/vínculo com 409. Métricas e leitura de logs continuam disponíveis. Os bloqueios e tarefas pertencem à instância do backend; reinícios usam a recuperação persistente dos builds interrompidos.
+
 1. O usuário informa um nome de até 80 caracteres (letras, números, ponto, hífen ou sublinhado), comentário obrigatório de até 4.000 caracteres e pacote.
 2. O backend preserva o original e seu hash, extrai em armazenamento separado e valida os arquivos antes de alterar a aplicação.
 3. O ecosystem existente no destino configurado (`rootPath` + `pm2ConfigPath`) tem prioridade e nunca é substituído por pacotes ou configurações salvas. Na ausência do arquivo local, usa-se o ecosystem armazenado no build; se também estiver ausente, gera-se uma cópia da configuração salva no projeto. Se houver uma pasta externa envolvendo o pacote, ela é removida do caminho de publicação quando o ecosystem encontrado permite identificá-la sem ambiguidade. Prefira empacotar diretamente o conteúdo da raiz do projeto; sem ecosystem no pacote, o sistema mantém sua estrutura.
