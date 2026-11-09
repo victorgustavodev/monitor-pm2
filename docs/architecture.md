@@ -125,7 +125,7 @@ Arquivos são lidos pela API a partir da pasta do projeto na VM. Publicação, v
 
 ### Configurações, idiomas e portas
 
-`features/settings/components/RetentionSettings.tsx` edita a política global de retenção pela API autenticada. O backend em `src/settings/` agenda a remoção de artefatos, compartilha um bloqueio com operações de publicação e preserva referências atuais e salvas do PM2. A configuração fica na coleção MongoDB `settings`, documento `retention`.
+`features/settings/components/RetentionSettings.tsx` edita a política global de retenção pela API autenticada. A opção começa desabilitada e o único prazo configurável conta a partir do envio de cada versão (`createdAt`). O backend em `src/settings/` verifica vencimentos a cada minuto, sem intervalo de limpeza configurável, compartilha um bloqueio com operações de publicação e preserva referências atuais e salvas do PM2. A configuração fica na coleção MongoDB `settings`, documento `retention`.
 
 `src/i18n/` contém o catálogo e a preferência local de idioma; consulte [i18n.md](i18n.md). `ProcessPort` é reutilizado na lista e nos cards da Home e exibe os números das portas em texto, mantendo a distinção entre portas em escuta e configuradas.
 

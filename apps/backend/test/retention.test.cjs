@@ -108,7 +108,7 @@ async function version(name, status = "ready", createdAt = old) {
   });
   return { _id, folder };
 }
-test("retention is disabled by default and settings require authentication and valid intervals", async () => {
+test("retention is disabled by default and settings accept only an age in days", async () => {
   assert.equal((await request("GET", undefined, false)).status, 401);
   const login = await fetch(`${origin}/api/auth/login`, {
     method: "POST",
@@ -121,12 +121,13 @@ test("retention is disabled by default and settings require authentication and v
   cookie = login.headers.get("set-cookie").split(";")[0];
   const settings = await (await request("GET")).json();
   assert.equal(settings.enabled, false);
-  assert.equal(settings.nextRunAt, null);
+  assert.equal(settings.intervalHours, undefined);
+  assert.equal(settings.nextRunAt, undefined);
   assert.equal(await runRetention(now), false);
   for (const body of [
     { enabled: "true", retentionDays: 30, intervalHours: 24 },
     { enabled: true, retentionDays: 0, intervalHours: 24 },
-    { enabled: true, retentionDays: 1, intervalHours: 0.5 },
+    { enabled: true, retentionDays: 1.5 },
     { enabled: true, retentionDays: 3651, intervalHours: 24 },
   ])
     assert.equal((await request("PUT", body)).status, 400);
@@ -142,12 +143,42 @@ test("retention is disabled by default and settings require authentication and v
   );
   const stored = await (await request("GET")).json();
   assert.equal(stored.updatedBy, "admin");
-  assert.equal(
-    new Date(stored.nextRunAt) - new Date(stored.updatedAt),
-    24 * 3600000,
-  );
+  assert.equal(stored.intervalHours, undefined);
+  assert.equal(stored.nextRunAt, undefined);
+  assert.equal((await db.retentionSettings.findOne({ _id: "retention" })).intervalHours, undefined);
   assert.equal(await runRetention(new Date(stored.updatedAt)), false);
 });
+test("versions expire at their own upload time plus seven days, independently of saved settings and legacy intervals", async () => {
+  const uploadedAt = new Date("2030-02-01T15:23:45Z");
+  const expiresAt = new Date("2030-02-08T15:23:45Z");
+  const first = await version("seven-days", "ready", uploadedAt);
+  const later = await version("later-upload", "ready", new Date("2030-02-02T15:23:45Z"));
+  const projectId = new ObjectId(), buildId = new ObjectId();
+  await db.projects.insertOne({ _id: projectId, nameKey: "age-boundary", rootKey: "age-boundary" });
+  const folder = resolve(directory, "archives/projects", projectId.toHexString(), buildId.toHexString());
+  await mkdir(folder, { recursive: true });
+  await writeFile(resolve(folder, "sentinel.txt"), "project build");
+  await db.projectBuilds.insertOne({ _id: buildId, projectId, nameKey: "seven-days", createdAt: uploadedAt, deployedAt: new Date("2030-02-07T12:00:00Z"), status: "deployed" });
+  await request("PUT", { enabled: true, retentionDays: 7 });
+  // Old persisted intervals and recent saves/runs must not postpone expiration.
+  await db.retentionSettings.updateOne({ _id: "retention" }, { $set: { intervalHours: 8760, updatedAt: expiresAt, lastRunAt: new Date(expiresAt.getTime() - 1) } });
+  assert.equal(await runRetention(new Date(expiresAt.getTime() - 1)), false);
+  assert.ok(await db.versions.findOne({ _id: first._id }));
+  assert.ok(await db.projectBuilds.findOne({ _id: buildId }));
+  assert.equal(await runRetention(expiresAt), true);
+  assert.equal(await db.versions.findOne({ _id: first._id }), null);
+  assert.equal(await db.projectBuilds.findOne({ _id: buildId }), null);
+  await assert.rejects(readFile(resolve(folder, "sentinel.txt")), { code: "ENOENT" });
+  assert.ok(await db.versions.findOne({ _id: later._id }));
+  await request("PUT", { enabled: false, retentionDays: 7 });
+  assert.equal(await runRetention(new Date("2030-02-10T00:00:00Z")), false);
+  assert.ok(await db.versions.findOne({ _id: later._id }));
+  // Re-enabling catches up with expired versions without starting another seven days.
+  await request("PUT", { enabled: true, retentionDays: 7 });
+  assert.equal(await runRetention(new Date("2030-02-10T00:00:00Z")), true);
+  assert.equal(await db.versions.findOne({ _id: later._id }), null);
+});
+
 test("cleanup removes expired artifacts while preserving active, recent, processing, PM2 and recovery files", async () => {
   const expired = await version("expired");
   const recent = await version("recent", "ready", now);
@@ -220,7 +251,11 @@ test("cleanup removes expired artifacts while preserving active, recent, process
     (await db.retentionSettings.findOne({ _id: "retention" })).lastDeleted,
     2,
   );
-  assert.equal(await runRetention(now), false);
+  const auditCount = await db.logs.countDocuments({ method: "RETENTION" });
+  assert.equal(await runRetention(now), true);
+  assert.equal((await db.retentionSettings.findOne({ _id: "retention" })).lastDeleted, 0);
+  assert.ok(await db.projectBuilds.findOne({ _id: activeId }));
+  assert.equal(await db.logs.countDocuments({ method: "RETENTION" }), auditCount);
 });
 test("PM2 failure prevents deletion and disabling cleanup cancels future runs", async () => {
   const entry = await version("pm2-unavailable");

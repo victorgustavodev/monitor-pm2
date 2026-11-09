@@ -61,7 +61,7 @@ Se for necessário implementar ou refatorar a lógica, trate falhas de leitura e
 
 ### Preferências adicionadas
 
-O idioma usa `monitor-pm2:locale` (`pt-BR`, `en`, `es`) e uma assinatura `useSyncExternalStore`; `App` acompanha essa assinatura sem remontar telas ou a conexão SSE. Datas usam a localidade selecionada. A política de limpeza, em contraste, é estado remoto compartilhado no MongoDB: o formulário mantém uma edição local e só altera o agendamento após salvar pela API. Esse agendamento roda no backend, mesmo sem navegadores conectados.
+O idioma usa `monitor-pm2:locale` (`pt-BR`, `en`, `es`) e uma assinatura `useSyncExternalStore`; `App` acompanha essa assinatura sem remontar telas ou a conexão SSE. Datas usam a localidade selecionada. A política de limpeza, em contraste, é estado remoto compartilhado no MongoDB: o formulário mantém uma edição local e só altera o agendamento após salvar pela API. Essa verificação roda no backend, mesmo sem navegadores conectados.
 
 - Não use o Context para guardar segredos que não deveriam estar disponíveis no navegador.
 - Evite logs de tokens, credenciais ou payloads sensíveis.
@@ -73,3 +73,7 @@ Veja `api-integration.md` para erros e contratos HTTP e `components.md` para sep
 ## Estado do vínculo de projeto
 
 A associação chega na mesma lista e no mesmo SSE que as métricas, sem polling adicional. O editor mantém seleção local e consulta o catálogo ao abrir. Após salvar, a resposta atualiza todas as instâncias da mesma identidade, inclusive com atualização ao vivo pausada. `mergeProcessLabels` também preserva vínculos contra snapshots anteriores à gravação; compara `projectUpdatedAt` e `projectObservedAt`. Uma coleta mais recente pode remover associações após exclusão de projeto ou mudança de pasta, mesmo sem um metadado explícito para aquele processo. A identificação inclui nome e namespace para não reaproveitar dados de outro processo com o mesmo ID.
+
+## Prazo das versões
+
+A retenção começa desabilitada e é uma política global (`enabled`, `retentionDays`). O formulário só grava alterações ao salvar; uma escolha já salva permanece ao reabrir a tela. O vencimento usa a data de envio de cada versão, sem reiniciar a contagem ao alterar configurações ou republicar. Ativar ou reduzir o prazo também se aplica às versões existentes. A verificação interna ocorre a cada minuto e não é uma segunda preferência do usuário.

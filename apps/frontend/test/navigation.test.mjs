@@ -19,8 +19,6 @@ let pendingProjectUpdate, pendingProjectDelete;
 let retention = {
   enabled: false,
   retentionDays: 30,
-  intervalHours: 24,
-  nextRunAt: null,
 };
 const projectRows = [
   {
@@ -199,7 +197,6 @@ before(
             retention = {
               ...retention,
               ...JSON.parse(options.body),
-              nextRunAt: "2026-11-07T15:00:00Z",
             };
             done(json(retention));
           };
@@ -378,11 +375,14 @@ after(async () => {
 
 function navigation(label) {
   return [...document.querySelectorAll("nav.sidebar-nav button")].find(
-    (button) => button.querySelector("span")?.textContent === label,
+    (button) => !button.closest("[inert]") && button.querySelector("span")?.textContent === label,
   );
 }
 
 test("SSE applies metric updates and PM2 recovery without polling, and detects connection loss", async () => {
+  const page = document.querySelector("main");
+  const search = document.querySelector('[aria-label="Buscar processo"]');
+  search.focus();
   assert.equal(streams.length, 1);
   assert.ok(!intervals.includes(10_000));
   const requestCount = requests.filter(
@@ -419,6 +419,8 @@ test("SSE applies metric updates and PM2 recovery without polling, and detects c
     requests.filter((request) => request.url === "/api/processes").length,
     requestCount,
   );
+  assert.equal(document.querySelector("main"), page);
+  assert.equal(document.activeElement, search);
 });
 async function go(label) {
   const originalLabel = label;
@@ -446,16 +448,24 @@ async function go(label) {
 }
 
 test("sidebar expands settings destinations and Home combines metrics with all process controls", async () => {
-  assert.equal(document.querySelectorAll("nav button").length, 3);
+  assert.equal([...document.querySelectorAll("nav button")].filter(button => !button.closest("[inert]")).length, 3);
   assert.equal(navigation("Usuários"), undefined);
   assert.equal(document.querySelector("h1").textContent, "Olá, tester");
   const settingsToggle = document.querySelector('[aria-controls="sidebar-settings-menu"]');
+  const submenu = document.getElementById("sidebar-settings-menu");
+  assert.equal(submenu.getAttribute("aria-hidden"), "true");
+  assert.ok(submenu.hasAttribute("inert"));
   await act(async () => settingsToggle.click());
   assert.equal(settingsToggle.getAttribute("aria-expanded"), "true");
+  assert.equal(submenu.getAttribute("aria-hidden"), "false");
+  assert.equal(submenu.hasAttribute("inert"), false);
   assert.ok(navigation("Logs"));
   assert.ok(navigation("Usuários"));
   assert.equal(document.querySelector("h1").textContent, "Olá, tester");
   await act(async () => settingsToggle.click());
+  assert.equal(document.getElementById("sidebar-settings-menu"), submenu);
+  assert.equal(submenu.getAttribute("aria-hidden"), "true");
+  assert.ok(submenu.hasAttribute("inert"));
   assert.equal(navigation("Logs"), undefined);
   assert.ok(document.querySelector('.sidebar-logo[alt="KPMG"]'));
   assert.match(
@@ -1000,6 +1010,9 @@ test("retention preferences persist and block navigation while saving", async ()
   await go("Configurações");
   const form = document.querySelector(".retention-form");
   assert.ok(form);
+  assert.equal(form.querySelector('[type="checkbox"]').checked, false);
+  assert.equal(form.querySelector('[name="intervalHours"]'), null);
+  assert.match(form.textContent, /data de envio de cada versão/);
   assert.equal(form.querySelector('[name="retentionDays"]').disabled, true);
   await act(async () => form.querySelector('input[type="checkbox"]').click());
   const setInput = Object.getOwnPropertyDescriptor(
@@ -1011,10 +1024,7 @@ test("retention preferences persist and block navigation while saving", async ()
     form
       .querySelector('[name="retentionDays"]')
       .dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-    setInput.call(form.querySelector('[name="intervalHours"]'), "6");
-    form
-      .querySelector('[name="intervalHours"]')
-      .dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+
   });
   await act(async () =>
     form.dispatchEvent(
@@ -1030,7 +1040,7 @@ test("retention preferences persist and block navigation while saving", async ()
           request.url === "/api/settings/retention" && request.method === "PUT",
       ).body,
     ),
-    { enabled: true, retentionDays: 14, intervalHours: 6 },
+    { enabled: true, retentionDays: 14 },
   );
   assert.equal(navigation("Projetos").disabled, false);
   await go("Home");
@@ -1055,7 +1065,7 @@ test("English and Spanish translate navigation, settings and projects without lo
   assert.equal(document.querySelector("h1").textContent, "Settings");
   assert.match(
     document.querySelector(".retention-form").textContent,
-    /Keep versions for/,
+    /Delete each version after/,
   );
   await go("Projects");
   assert.match(document.querySelector("main").textContent, /Create new build/);

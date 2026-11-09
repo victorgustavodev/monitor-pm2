@@ -136,3 +136,17 @@ test("terminates an open stream when its user is removed", async (t) => {
   await until(() => client.writableEnded);
   assert.equal(client.events("session-expired").length, 1);
 });
+
+
+test("collection timestamps do not broadcast unchanged data but new subscribers receive the latest observation", async (t) => {
+  let observations = 0;
+  const stream = createProcessStream(async () => [{ id: 1, projectId: null, projectObservedAt: String(++observations) }], 10, 1000);
+  t.after(() => stream.close());
+  const first = new Client();
+  stream.subscribe(first, Date.now() + 60000);
+  await until(() => observations >= 3);
+  assert.equal(first.events("processes").length, 1);
+  const second = new Client();
+  stream.subscribe(second, Date.now() + 60000);
+  assert.ok(second.events("processes")[0].includes(`"projectObservedAt":"${observations}"`));
+});

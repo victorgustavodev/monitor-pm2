@@ -94,3 +94,11 @@ Favicon e `theme-color` são artefatos independentes do CSS. Uma mudança de mar
 ## Submenu de configurações
 
 Configurações é um botão de expansão com `aria-expanded` e `aria-controls`. Geral, Logs e Usuários aparecem em uma lista abaixo dele; o destino ativo usa `aria-current="page"`. No celular a navegação principal continua horizontal e o grupo se expande verticalmente, dentro do fluxo, sem sobrepor o conteúdo. Usuários só aparece para administradores. Os links herdam tokens e foco da sidebar existente.
+
+## Transições de navegação
+
+As transições usam CSS, sem dependências ou atrasos artificiais nas ações. A área principal recebe entrada de 180 ms, com opacidade e deslocamento de 6 px, somente ao trocar de área (`key={view}`). Atualizações de métricas, busca, idioma e respostas da API não reiniciam a animação nem remontam a tela.
+
+O submenu permanece montado para animar expansão e recolhimento com linhas de grid (180 ms). Quando fechado, `inert` e `aria-hidden` impedem interação e acesso por teclado/leitor de tela imediatamente, enquanto a animação termina. A seta acompanha a expansão.
+
+Diálogos animam apenas a abertura em 180 ms; o fundo aparece em 150 ms. Fechar continua imediato e os bloqueios de operações pendentes são preservados. Botões, links e bordas de cards usam transições curtas, sem movimentar linhas, valores ou métricas. Todas as novas animações e transições ficam em `prefers-reduced-motion: no-preference`; com movimento reduzido, a navegação permanece imediata.

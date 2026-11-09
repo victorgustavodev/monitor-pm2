@@ -1,4 +1,9 @@
 export const messages: Record<string, { en: string; es: string }> = {
+  "Excluir cada versão após (dias)": {"en": "Delete each version after (days)", "es": "Eliminar cada versión después de (días)"},
+  "O prazo conta da data de envio de cada versão. Com 7 dias, uma versão enviada hoje vence daqui a 7 dias. A exclusão ocorre automaticamente em até um minuto após o vencimento, enquanto o monitor estiver disponível.": {"en": "The period starts when each version is uploaded. With 7 days, a version uploaded today expires in 7 days. Deletion happens automatically within one minute after expiration while the monitor is available.", "es": "El plazo comienza en la fecha de envío de cada versión. Con 7 días, una versión enviada hoy vence dentro de 7 días. Se elimina automáticamente en hasta un minuto después del vencimiento, mientras el monitor esté disponible."},
+  "Desabilitada por padrão. Ao ativar ou reduzir o prazo, versões existentes que já atingiram essa idade também ficam sujeitas à exclusão.": {"en": "Disabled by default. Enabling cleanup or shortening the period also makes existing versions that have reached that age eligible for deletion.", "es": "Deshabilitada por defecto. Al activarla o reducir el plazo, las versiones existentes que ya alcanzaron esa antigüedad también quedan sujetas a eliminación."},
+  "Informe a limpeza habilitada ou desabilitada e o prazo de 1 a 3650 dias.": {"en": "Specify whether cleanup is enabled and a period from 1 to 3650 days.", "es": "Indica si la limpieza está habilitada y un plazo de 1 a 3650 días."},
+
   "Geral": {"en": "General", "es": "General"},
   "Sem projeto": {"en": "No project", "es": "Sin proyecto"},
   "Alterar vínculo": {"en": "Change link", "es": "Cambiar vínculo"},
@@ -1187,23 +1192,11 @@ export const messages: Record<string, { en: string; es: string }> = {
     en: "This setting applies to all monitor users.",
     es: "Esta configuración se aplica a todos los usuarios del monitor.",
   },
-  "Manter versões por (dias)": {
-    en: "Keep versions for (days)",
-    es: "Conservar versiones durante (días)",
-  },
-  "Executar limpeza a cada (horas)": {
-    en: "Run cleanup every (hours)",
-    es: "Ejecutar limpieza cada (horas)",
-  },
   "A limpeza exclui permanentemente versões antigas e seus arquivos. Builds ativos, publicações em andamento e arquivos usados pelo PM2 são preservados. A pasta principal dos projetos não é apagada.":
     {
       en: "Cleanup permanently deletes old versions and their files. Active builds, ongoing deployments and files used by PM2 are preserved. Project root folders are not deleted.",
       es: "La limpieza elimina permanentemente versiones antiguas y sus archivos. Se conservan los builds activos, las publicaciones en curso y los archivos usados por PM2. No se elimina la carpeta principal de los proyectos.",
     },
-  "Próxima limpeza:": {
-    en: "Next cleanup:",
-    es: "Próxima limpieza:",
-  },
   "Última limpeza:": {
     en: "Last cleanup:",
     es: "Última limpieza:",
@@ -1248,11 +1241,6 @@ export const messages: Record<string, { en: string; es: string }> = {
     en: " (configured)",
     es: " (configurado)",
   },
-  "Informe a limpeza habilitada ou desabilitada, retenção de 1 a 3650 dias e intervalo de 1 a 8760 horas.":
-    {
-      en: "Set cleanup enabled or disabled, retention from 1 to 3650 days, and interval from 1 to 8760 hours.",
-      es: "Indica si la limpieza está habilitada, una retención de 1 a 3650 días y un intervalo de 1 a 8760 horas.",
-    },
   "A limpeza de versões está em andamento. Tente novamente em instantes.": {
     en: "Version cleanup is in progress. Try again shortly.",
     es: "La limpieza de versiones está en curso. Inténtalo de nuevo en unos instantes.",

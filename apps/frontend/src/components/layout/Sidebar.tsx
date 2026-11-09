@@ -28,6 +28,12 @@ export const dashboardViews = [
     icon: FolderGit2,
   },
   {
+    id: "settings",
+    label: "Configurações",
+    description: "Ajuste a atualização do painel e consulte sua conexão.",
+    icon: Settings,
+  },
+  {
     id: "logs",
     label: "Logs",
     description:
@@ -40,12 +46,7 @@ export const dashboardViews = [
     description: "Gerencie os usuários e seus perfis de acesso.",
     icon: CircleUserRound,
   },
-  {
-    id: "settings",
-    label: "Configurações",
-    description: "Ajuste a atualização do painel e consulte sua conexão.",
-    icon: Settings,
-  },
+
 ] as const;
 
 export function Sidebar({
@@ -105,15 +106,25 @@ export function Sidebar({
             <span>{t("Configurações")}</span>
             <ChevronDown size={16} className={settingsOpen ? "sidebar-chevron expanded" : "sidebar-chevron"} aria-hidden="true" />
           </button>
-          {settingsOpen && <div id="sidebar-settings-menu" className="sidebar-submenu">
-            {dashboardViews.filter(item => item.id === "settings" || item.id === "logs" || (item.id === "users" && isAdmin)).map(({ id, label, icon: Icon }) => (
-              <button key={id} type="button" className="sidebar-link" disabled={busy}
-                aria-current={view === id ? "page" : undefined} onClick={() => onNavigate(id)}>
-                <Icon size={17} aria-hidden="true" />
-                <span>{t(id === "settings" ? "Geral" : label)}</span>
-              </button>
-            ))}
-          </div>}
+          <div
+            id="sidebar-settings-menu"
+            className="sidebar-submenu-collapse"
+            data-open={settingsOpen}
+            aria-hidden={!settingsOpen}
+            inert={!settingsOpen}
+          >
+            <div className="sidebar-submenu-clip">
+              <div className="sidebar-submenu">
+                {dashboardViews.filter(item => item.id === "settings" || item.id === "logs" || (item.id === "users" && isAdmin)).map(({ id, label, icon: Icon }) => (
+                  <button key={id} type="button" className="sidebar-link" disabled={busy}
+                    aria-current={view === id ? "page" : undefined} onClick={() => onNavigate(id)}>
+                    <Icon size={17} aria-hidden="true" />
+                    <span>{t(id === "settings" ? "Geral" : label)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </nav>
       <div className="sidebar-footer">

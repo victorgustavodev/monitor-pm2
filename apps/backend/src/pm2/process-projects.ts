@@ -11,7 +11,10 @@ export function processScope() {
 }
 
 export function processIdentity(row: Pm2Row) {
-  return { name: String(row.name ?? row.pm_id), namespace: row.pm2_env?.namespace || "default" };
+  return {
+    name: String(row.name ?? row.pm_id),
+    namespace: row.pm2_env?.namespace || "default",
+  };
 }
 
 export async function resolveProcessProjects(rows: Pm2Row[]) {
@@ -20,24 +23,34 @@ export async function resolveProcessProjects(rows: Pm2Row[]) {
     projects.find({}).toArray(),
     processProjects.find({ scope: processScope() }).toArray(),
   ]);
-  const saved = new Map(links.map(link => [JSON.stringify([link.name, link.namespace]), link]));
-  const byId = new Map(catalog.map(project => [project._id.toHexString(), project]));
+  const saved = new Map(
+    links.map(link => [JSON.stringify([link.name, link.namespace]), link]),
+  );
+  const byId = new Map(
+    catalog.map(project => [project._id.toHexString(), project]),
+  );
   const automatic = new Map<number, string>();
   for (const project of catalog) {
     for (const process of selectProjectProcesses(rows, project.rootPath).processes)
       automatic.set(process.id, project._id.toHexString());
   }
-  return new Map(rows.map(row => {
-    const identity = processIdentity(row);
-    const link = saved.get(JSON.stringify([identity.name, identity.namespace]));
-    const id = link ? link.projectId?.toHexString() : automatic.get(row.pm_id);
-    const project = id ? byId.get(id) : undefined;
-    const updatedAt = Math.max(link?.updatedAt.getTime() || 0, project?.updatedAt.getTime() || 0);
-    return [row.pm_id, {
-      projectObservedAt: observedAt,
-      projectId: project?._id.toHexString() || null,
-      projectName: project?.name || null,
-      projectUpdatedAt: updatedAt ? new Date(updatedAt).toISOString() : null,
-    }];
-  }));
+  return new Map(
+    rows.map(row => {
+      const identity = processIdentity(row);
+      const link = saved.get(JSON.stringify([identity.name, identity.namespace]));
+      // An explicit null keeps the process unlinked, even inside a project root.
+      const id = link ? link.projectId?.toHexString() : automatic.get(row.pm_id);
+      const project = id ? byId.get(id) : undefined;
+      const updatedAt = Math.max(
+        link?.updatedAt.getTime() || 0,
+        project?.updatedAt.getTime() || 0,
+      );
+      return [row.pm_id, {
+        projectObservedAt: observedAt,
+        projectId: project?._id.toHexString() || null,
+        projectName: project?.name || null,
+        projectUpdatedAt: updatedAt ? new Date(updatedAt).toISOString() : null,
+      }];
+    }),
+  );
 }

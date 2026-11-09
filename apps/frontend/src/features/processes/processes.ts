@@ -26,19 +26,35 @@ export type SaveProcessLabel = (
   label: string,
 ) => Promise<void>;
 
+function projectVersion(process: Process) {
+  const updated = process.projectUpdatedAt || "";
+  const observed = process.projectObservedAt || "";
+  return updated > observed ? updated : observed;
+}
+
 export function mergeProcessLabels(incoming: Process[], current: Process[]) {
   const known = new Map(current.map((process) => [process.id, process]));
   return incoming.map((process) => {
     const previous = known.get(process.id);
-    if (previous && previous.name === process.name &&
-        (previous.namespace || "default") === (process.namespace || "default")) {
+    if (
+      previous &&
+      previous.name === process.name &&
+      (previous.namespace || "default") === (process.namespace || "default")
+    ) {
       if ((previous.labelUpdatedAt || "") > (process.labelUpdatedAt || ""))
-        process = { ...process, label: previous.label, labelUpdatedAt: previous.labelUpdatedAt };
-      const previousProjectVersion = [previous.projectUpdatedAt || "", previous.projectObservedAt || ""].sort().at(-1)!;
-      const incomingProjectVersion = [process.projectUpdatedAt || "", process.projectObservedAt || ""].sort().at(-1)!;
-      if (previousProjectVersion > incomingProjectVersion)
-        process = { ...process, projectId: previous.projectId, projectName: previous.projectName,
-          projectUpdatedAt: previous.projectUpdatedAt, projectObservedAt: previous.projectObservedAt };
+        process = {
+          ...process,
+          label: previous.label,
+          labelUpdatedAt: previous.labelUpdatedAt,
+        };
+      if (projectVersion(previous) > projectVersion(process))
+        process = {
+          ...process,
+          projectId: previous.projectId,
+          projectName: previous.projectName,
+          projectUpdatedAt: previous.projectUpdatedAt,
+          projectObservedAt: previous.projectObservedAt,
+        };
     }
     return process;
   });
@@ -64,4 +80,7 @@ export type ProcessProjectActions = {
   onProjectEdit: (process: Process) => void;
   onOpenProject: (id: string) => void;
 };
-export type ProcessProjectLink = Pick<Process, "projectId" | "projectName" | "projectUpdatedAt"> & { name: string; namespace: string };
+export type ProcessProjectLink = Pick<
+  Process,
+  "projectId" | "projectName" | "projectUpdatedAt"
+> & { name: string; namespace: string };

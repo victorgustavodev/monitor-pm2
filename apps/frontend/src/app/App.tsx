@@ -349,7 +349,7 @@ export function App() {
         busy={managementBusy || loggingOut || labelSaving || projectSaving || addingProcess || pickingFile}
         onLogout={logout}
       />
-      <main id="dashboard-main" className="dashboard-content" tabIndex={-1}>
+      <main key={view} id="dashboard-main" className="dashboard-content page-enter" tabIndex={-1}>
         <header className="dashboard-page-header">
           <div>
             <p className="page-eyebrow">MONITOR PM2</p>
@@ -574,7 +574,7 @@ export function App() {
       </dialog>
       {logs && (
         <div
-          className="fixed inset-0 z-20 grid place-items-center bg-overlay p-4 backdrop-blur-sm"
+          className="modal-overlay fixed inset-0 z-20 grid place-items-center bg-overlay p-4 backdrop-blur-sm"
           onClick={() => setLogs(null)}
         >
           <section

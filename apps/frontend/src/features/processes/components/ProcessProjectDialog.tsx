@@ -18,7 +18,15 @@ export function ProcessProjectDialog({ process, busy, onSave, onClose, onSession
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [loaded, setLoaded] = useState(false);
-  useEffect(() => { dialog.current?.showModal(); }, []);
+  useEffect(() => {
+    const element = dialog.current;
+    const trigger = document.activeElement;
+    element?.showModal();
+    return () => {
+      element?.close();
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
+    };
+  }, []);
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -41,7 +49,7 @@ export function ProcessProjectDialog({ process, busy, onSave, onClose, onSession
   }
   return <dialog ref={dialog} aria-labelledby="process-project-title"
     onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}
-    className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-2xl border border-line bg-surface p-6 text-content shadow-dialog backdrop:bg-overlay">
+    className="m-auto max-h-[90vh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl border border-line bg-surface p-6 text-content shadow-dialog backdrop:bg-overlay">
     <form onSubmit={submit} className="space-y-4" aria-busy={busy || loading}>
       <h2 id="process-project-title" className="text-lg font-semibold">{t("Vincular projeto a {0}", { 0: process.name })}</h2>
       <label className="block text-sm">{t("Projeto")}

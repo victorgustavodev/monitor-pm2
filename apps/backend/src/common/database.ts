@@ -123,7 +123,6 @@ export interface RetentionSettings {
   _id: string;
   enabled: boolean;
   retentionDays: number;
-  intervalHours: number;
   updatedAt: Date;
   updatedBy: string;
   lastRunAt?: Date;

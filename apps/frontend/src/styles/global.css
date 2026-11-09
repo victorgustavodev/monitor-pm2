@@ -1221,11 +1221,88 @@ input::placeholder {
   font-size: 11px;
 }
 
-.sidebar-submenu { display: grid; gap: 4px; padding: 4px 0 0 16px; }
-.sidebar-chevron { margin-left: auto; transition: transform 150ms; }
+.sidebar-submenu { display: grid; gap: 4px; padding: 6px 6px 6px 16px; }
+.sidebar-chevron { margin-left: auto; }
 .sidebar-chevron.expanded { transform: rotate(180deg); }
 @media (max-width: 767px) {
   .sidebar-nav { align-items: flex-start; }
   .sidebar-settings { flex-shrink: 0; }
   .sidebar-submenu { padding-left: 8px; }
+}
+
+.sidebar-submenu-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+}
+.sidebar-submenu-collapse[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+.sidebar-submenu-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+.application-card:focus-within,
+.project-card:focus-within {
+  border-color: var(--ds-color-line-strong);
+}
+@media (hover: hover) {
+  .application-card:hover,
+  .project-card:hover {
+    border-color: var(--ds-color-line-strong);
+  }
+}
+
+/* Motion is opt-in to the system preference; live metrics never animate. */
+@media (prefers-reduced-motion: no-preference) {
+  .page-enter {
+    animation: page-enter 180ms ease-out;
+  }
+  .sidebar-submenu-collapse {
+    transition:
+      grid-template-rows 180ms ease,
+      opacity 150ms ease,
+      visibility 0s linear 180ms;
+  }
+  .sidebar-submenu-collapse[data-open="true"] {
+    transition-delay: 0s;
+  }
+  .sidebar-chevron {
+    transition: transform 180ms ease;
+  }
+  .dashboard-shell dialog[open],
+  .dashboard-shell [role="dialog"] {
+    animation: modal-enter 180ms ease-out;
+  }
+  .dashboard-shell dialog[open]::backdrop,
+  .modal-overlay {
+    animation: overlay-enter 150ms ease-out;
+  }
+  .dashboard-shell :where(button, a) {
+    transition:
+      background-color 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+  .application-card,
+  .project-card {
+    transition: border-color 150ms ease;
+  }
+}
+
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes modal-enter {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes overlay-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

@@ -6,8 +6,6 @@ import { dateLocale } from "../../../i18n";
 type Retention = {
   enabled: boolean;
   retentionDays: number;
-  intervalHours: number;
-  nextRunAt: string | null;
   lastRunAt?: string;
   lastDeleted?: number;
   lastError?: string;
@@ -63,7 +61,6 @@ export function RetentionSettings({
           body: JSON.stringify({
             enabled: retention.enabled,
             retentionDays: retention.retentionDays,
-            intervalHours: retention.intervalHours,
           }),
         }),
       );
@@ -128,9 +125,10 @@ export function RetentionSettings({
           </label>
           <div className="retention-fields">
             <label className="settings-field">
-              {t("Manter versões por (dias)")}
+              {t("Excluir cada versão após (dias)")}
               <input
                 name="retentionDays"
+                aria-describedby="retention-age-help"
                 type="number"
                 min={1}
                 max={3650}
@@ -146,37 +144,18 @@ export function RetentionSettings({
                 }
               />
             </label>
-            <label className="settings-field">
-              {t("Executar limpeza a cada (horas)")}
-              <input
-                name="intervalHours"
-                type="number"
-                min={1}
-                max={8760}
-                step={1}
-                required
-                disabled={busy || !retention.enabled}
-                value={retention.intervalHours}
-                onChange={(event) =>
-                  setRetention({
-                    ...retention,
-                    intervalHours: Number(event.target.value),
-                  })
-                }
-              />
-            </label>
           </div>
+          <p id="retention-age-help" className="settings-note">
+            {t("O prazo conta da data de envio de cada versão. Com 7 dias, uma versão enviada hoje vence daqui a 7 dias. A exclusão ocorre automaticamente em até um minuto após o vencimento, enquanto o monitor estiver disponível.")}
+          </p>
+          <p className="settings-note">
+            {t("Desabilitada por padrão. Ao ativar ou reduzir o prazo, versões existentes que já atingiram essa idade também ficam sujeitas à exclusão.")}
+          </p>
           <p className="settings-note">
             {t(
               "A limpeza exclui permanentemente versões antigas e seus arquivos. Builds ativos, publicações em andamento e arquivos usados pelo PM2 são preservados. A pasta principal dos projetos não é apagada.",
             )}
           </p>
-          {retention.nextRunAt && (
-            <p className="settings-note">
-              {t("Próxima limpeza:")}{" "}
-              {new Date(retention.nextRunAt).toLocaleString(dateLocale())}
-            </p>
-          )}
           {retention.lastRunAt && (
             <p className="settings-note">
               {t("Última limpeza:")}{" "}

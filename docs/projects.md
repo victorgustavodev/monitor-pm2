@@ -67,7 +67,7 @@ versions/projects/<projectId>/<buildId>/
     backup/                  # Arquivos anteriores afetados
 ```
 
-Pacotes, extrações, históricos e cópias de recuperação são preservados por padrão. A limpeza opcional de **Configurações** remove builds antigos conforme o prazo de retenção, preservando o build ativo, referências do PM2 e projetos com recuperação pendente. Ela também se aplica aos uploads avulsos; nunca remove a pasta principal da aplicação. Dimensione o disco e faça backup do MongoDB, de `VERSIONS_DIR` e das pastas das aplicações. A interface de uploads avulsos e a tela global de builds foram removidas; novos envios pelo painel exigem abrir um projeto. Os registros e artefatos legados não são apagados nesta mudança, e a API legada permanece por compatibilidade. Não há associação automática desses registros a projetos.
+Pacotes, extrações, históricos e cópias de recuperação são preservados por padrão. A limpeza opcional de **Configurações** remove builds vencidos conforme o prazo em dias contado de `createdAt` (envio), sem reiniciar a idade na republicação. A opção começa desabilitada e o backend verifica os vencimentos a cada minuto, preservando o build ativo, referências do PM2 e projetos com recuperação pendente. Ela também se aplica aos uploads avulsos; nunca remove a pasta principal da aplicação. Dimensione o disco e faça backup do MongoDB, de `VERSIONS_DIR` e das pastas das aplicações. A interface de uploads avulsos e a tela global de builds foram removidas; novos envios pelo painel exigem abrir um projeto. Os registros e artefatos legados não são apagados nesta mudança, e a API legada permanece por compatibilidade. Não há associação automática desses registros a projetos.
 
 ## API autenticada
 

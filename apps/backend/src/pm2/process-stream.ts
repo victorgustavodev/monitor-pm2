@@ -15,6 +15,7 @@ export function createProcessStream(
   let heartbeat: NodeJS.Timeout | undefined;
   let collecting = false;
   let snapshot: string | undefined;
+  let signature: string | undefined;
 
   function write(response: Response, frame: string) {
     if (
@@ -31,15 +32,24 @@ export function createProcessStream(
     if (collecting || !clients.size) return;
     collecting = true;
     let frame: string;
+    let nextSignature: string;
     try {
-      frame = `event: processes\ndata: ${JSON.stringify(await read())}\n\n`;
+      const rows = await read();
+      frame = `event: processes\ndata: ${JSON.stringify(rows)}\n\n`;
+      // Collection timestamps order snapshots but are not process changes.
+      nextSignature = JSON.stringify(
+        rows.map(({ projectObservedAt: _observedAt, ...row }) => row),
+      );
     } catch {
       frame = `event: metrics-error\ndata: ${JSON.stringify({ message: "Não foi possível carregar os processos do PM2. Verifique a conexão do monitor com o PM2 na VM." })}\n\n`;
+      nextSignature = frame;
     } finally {
       collecting = false;
     }
-    if (!clients.size || frame === snapshot) return;
+    if (!clients.size) return;
     snapshot = frame;
+    if (nextSignature === signature) return;
+    signature = nextSignature;
     for (const response of clients.keys()) write(response, frame);
   }
 
@@ -49,6 +59,7 @@ export function createProcessStream(
     clearInterval(heartbeat);
     collector = heartbeat = undefined;
     snapshot = undefined;
+    signature = undefined;
   }
 
   return {

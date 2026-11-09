@@ -27,12 +27,23 @@ async function removeArtifact(folder: string) {
 
 export async function runRetention(now = new Date()) {
   let settings = await getRetentionSettings();
-  if (!settings.enabled || !settings.nextRunAt || settings.nextRunAt > now)
-    return false;
+  if (!settings.enabled) return false;
+  const cutoff = new Date(now.getTime() - settings.retentionDays * 86400000);
+  // No PM2 query or cleanup lock is needed before any version reaches its age limit.
+  const [dueVersion, dueBuild] = await Promise.all([
+    versions.findOne(
+      { createdAt: { $lte: cutoff }, status: { $nin: ["processing", "starting"] } },
+      { projection: { _id: 1 } },
+    ),
+    projectBuilds.findOne(
+      { createdAt: { $lte: cutoff }, status: { $nin: ["processing", "deploying"] } },
+      { projection: { _id: 1 } },
+    ),
+  ]);
+  if (!dueVersion && !dueBuild) return false;
   return tryArtifactCleanup(async () => {
     settings = await getRetentionSettings();
-    if (!settings.enabled || !settings.nextRunAt || settings.nextRunAt > now)
-      return;
+    if (!settings.enabled) return;
     let deleted = 0;
     let error: string | undefined;
     try {
@@ -45,7 +56,7 @@ export async function runRetention(now = new Date()) {
       );
       const oldVersions = await versions
         .find({
-          createdAt: { $lt: cutoff },
+          createdAt: { $lte: cutoff },
           status: { $nin: ["processing", "starting"] },
         })
         .toArray();
@@ -63,7 +74,7 @@ export async function runRetention(now = new Date()) {
       }
       const oldBuilds = await projectBuilds
         .find({
-          createdAt: { $lt: cutoff },
+          createdAt: { $lte: cutoff },
           status: { $nin: ["processing", "deploying"] },
         })
         .toArray();
@@ -107,15 +118,18 @@ export async function runRetention(now = new Date()) {
         ...(!error ? { $unset: { lastError: "" } } : {}),
       },
     );
-    await logs.insertOne({
-      kind: "audit",
-      createdAt: now,
-      username: "system",
-      method: "RETENTION",
-      path: "/api/settings/retention",
-      status: error ? 500 : 200,
-      content: `deleted=${deleted}${error ? `; ${error}` : ""}`,
-    });
+    // Rechecking protected versions every minute should not flood the audit log.
+    if (deleted > 0 || error !== settings.lastError) {
+      await logs.insertOne({
+        kind: "audit",
+        createdAt: now,
+        username: "system",
+        method: "RETENTION",
+        path: "/api/settings/retention",
+        status: error ? 500 : 200,
+        content: `deleted=${deleted}${error ? `; ${error}` : ""}`,
+      });
+    }
   });
 }
 

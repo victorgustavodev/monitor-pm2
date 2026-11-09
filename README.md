@@ -7,7 +7,7 @@ Painel web para visualizar e operar processos do PM2 em uma VM Windows. O fronte
 - Navegação lateral com Home, Projetos e Configurações expansível (Geral, Logs e Usuários); em celular, a navegação fica no topo. A Home reúne quatro indicadores e a lista completa de processos, com busca e modos Lista/Cards.
 - Projetos com navegação pelos arquivos da VM, visualização de texto, download e histórico de builds com autor e comentário obrigatório.
 - Publicação de builds na pasta cadastrada do projeto, execução do ecosystem PM2 e possibilidade de republicar versões anteriores.
-- Limpeza automática opcional, com prazo de retenção e intervalo configuráveis, preservando builds ativos e arquivos referenciados pelo PM2.
+- Limpeza automática opcional, com prazo contado a partir do envio de cada versão, preservando builds ativos e arquivos referenciados pelo PM2.
 - Interface em português do Brasil, inglês e espanhol, selecionável em Configurações.
 - Lista status, PID, portas TCP, CPU, memória, uptime e reinícios dos processos.
 - Permite vincular um nome de exibição ao processo, como `processText3920 → workTabs`, com edição na lista e nos cards e busca pelo nome técnico ou de exibição.
@@ -125,11 +125,13 @@ Quando não há uma porta confirmada em escuta ou a inspeção não está dispon
 
 Em **Configurações → Geral → Idioma**, escolha português do Brasil, inglês ou espanhol. A preferência fica neste navegador e não encerra a sessão. O catálogo de traduções fica em `apps/frontend/src/i18n/messages.ts`; frases em português são as chaves, com traduções `en` e `es`. Datas acompanham o idioma. Conteúdo dos projetos, comentários, nomes, logs e diagnósticos técnicos externos permanecem no idioma original. Consulte [internacionalização](docs/i18n.md) para ampliar o catálogo.
 
-Em **Limpeza automática de versões**, habilite a função, informe **Manter versões por (dias)** e **Executar limpeza a cada (horas)** e salve. Ela começa desabilitada; os valores iniciais são 30 dias e 24 horas. A configuração é compartilhada e persistida no MongoDB. A primeira execução fica agendada a partir do salvamento; o backend verifica o agendamento a cada minuto e retoma execuções vencidas após reiniciar.
+Em **Limpeza automática de versões**, habilite a função, informe **Excluir cada versão após (dias)** e salve. Ela começa desabilitada, com prazo sugerido de 30 dias. A configuração é global e persistida no MongoDB: cada versão vence em `createdAt + retentionDays × 24 horas`. Por exemplo, um envio em 09/11 às 14h com prazo de 7 dias vence em 16/11 às 14h. Salvar a configuração ou republicar o build não reinicia esse prazo. Ativar ou diminuir o prazo também afeta versões existentes.
+
+Não há intervalo de limpeza configurável. O backend verifica vencimentos a cada minuto enquanto está disponível, sem esperar mais horas depois de uma versão vencer. Após reiniciar, retoma a verificação imediatamente. Operações em andamento, falhas de acesso e proteções dos arquivos podem adiar a exclusão.
 
 A limpeza remove permanentemente registros antigos e seus pacotes, extrações e backups em `VERSIONS_DIR`. Preserva o build ativo de cada projeto, operações em andamento, projetos com recuperação pendente e arquivos referenciados pelos processos PM2 (inclusive parados) ou pelas listas salvas `dump.pm2` e `dump.pm2.bak`. Se o PM2 estiver indisponível ou seus caminhos não puderem ser verificados, a limpeza é adiada e o erro aparece nas configurações. A pasta principal das aplicações não é removida. Publicações e limpeza são mutuamente exclusivas; execute uma única instância do backend.
 
-Os campos de última e próxima execução permitem acompanhar o agendamento. O resultado também é registrado como auditoria `RETENTION`. Desabilitar e salvar cancela futuras execuções. Não é usado TTL do MongoDB, pois remover somente o documento deixaria arquivos no disco.
+O campo de última limpeza mostra a última verificação de versões vencidas. Exclusões e mudanças no estado de erro são registradas como auditoria `RETENTION`; verificações sem alteração não geram registros repetidos. Desabilitar e salvar cancela futuras execuções. Não é usado TTL do MongoDB, pois remover somente o documento deixaria arquivos no disco.
 
 ## Design system
 
@@ -207,7 +209,7 @@ As rotas abaixo exigem sessão, exceto login e health:
 
 - `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`
 - `GET /api/users`, `POST /api/users` com JSON `{ "username": "operador", "password": "senha-com-12-ou-mais", "role": "user" }`; exclusivos de administradores, `role` opcional (`user` ou `admin`)
-- `GET /api/settings/retention`, `PUT /api/settings/retention` com JSON `{ "enabled": true, "retentionDays": 30, "intervalHours": 24 }`; limites: 1–3650 dias e 1–8760 horas
+- `GET /api/settings/retention`, `PUT /api/settings/retention` com JSON `{ "enabled": true, "retentionDays": 7 }`; prazo inteiro de 1–3650 dias, contado a partir do envio de cada versão
 - `GET /api/processes`
 - `PUT /api/processes/:id/label` com JSON `{ "name": "processText3920", "namespace": "default", "label": "workTabs" }`; `label` vazio remove o nome de exibição
 - `GET /api/processes/stream` (SSE: eventos `processes`, `metrics-error` e `session-expired`)

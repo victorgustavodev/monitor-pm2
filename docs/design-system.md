@@ -51,7 +51,7 @@ Estados devem continuar identificáveis por texto ou ícone, além da cor. Mante
 
 ## Navegação e layout
 
-O painel autenticado usa uma sidebar azul com a logo branca, o usuário conectado e cinco áreas: Home, projetos, logs, builds e configurações. Usuários fica dentro de Configurações para administradores. `components/layout/Sidebar.tsx` centraliza os destinos; `app/App.tsx` controla a área ativa. As telas ficam em `features/`, os estilos globais em `styles/global.css` e a tela de login em `features/auth/Login.tsx`. O estado ativo, o hover, os ícones e o foco de teclado da navegação usam os tokens `--ds-color-navigation-*` e `--ds-color-shell-*`.
+O painel autenticado usa uma sidebar azul com a logo branca, o usuário conectado e Home, Projetos e um grupo expansível Configurações. O grupo abre Geral, Logs e Usuários abaixo do botão; Logs e Usuários são destinos independentes, e Usuários é exclusivo de administradores. Builds ficam somente dentro do projeto. `components/layout/Sidebar.tsx` centraliza os destinos; `app/App.tsx` controla a área ativa. As telas ficam em `features/`, os estilos globais em `styles/global.css` e a tela de login em `features/auth/Login.tsx`. O estado ativo, o hover, os ícones e o foco de teclado da navegação usam os tokens `--ds-color-navigation-*` e `--ds-color-shell-*`.
 
 Em desktop, a sidebar permanece visível enquanto o conteúdo rola. Em telas menores que 768 px, ela vira uma barra superior com navegação horizontal. O conteúdo mantém largura flexível e tabelas rolam dentro do próprio card. O atalho “Ir para o conteúdo” permite pular a navegação usando o teclado.
 
