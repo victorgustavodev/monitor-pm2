@@ -63,10 +63,10 @@ export function ProcessLabel({
     );
   return (
     <div className="process-label">
-      <span className={process.label ? "process-label-value" : "text-muted"}>
-        {process.label || "—"}
-      </span>
-      <button
+      <strong className={process.label ? "process-label-value" : "font-medium text-content"}>
+        {process.label || process.name}
+      </strong>
+      {!process.startProjectId && <button
         type="button"
         disabled={busy}
         aria-label={t("Editar nome de exibição de {0}", { 0: process.name })}
@@ -77,7 +77,7 @@ export function ProcessLabel({
         }}
       >
         {process.label ? t("Editar nome") : t("Adicionar nome")}
-      </button>
+      </button>}
     </div>
   );
 }

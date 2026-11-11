@@ -81,9 +81,12 @@ export function BuildForm({
         <p className="project-form-note">
           {t("Ao publicar, os arquivos serão aplicados em")}{" "}
           <code>{project.rootPath}</code>{" "}
-          {t("e a aplicação será iniciada ou atualizada com")}{" "}
+          {t("e os processos serão recriados com")}{" "}
           <code>{project.pm2ConfigPath}</code>
           {t(". Inclua as dependências necessárias no pacote.")}
+        </p>
+        <p className="project-form-note">
+          {t("A recriação interrompe a aplicação por alguns instantes. O ecosystem já existente na pasta da VM é preservado e tem prioridade sobre o arquivo do pacote.")}
         </p>
         <p className="project-form-note">
           {project.pm2ConfigContent

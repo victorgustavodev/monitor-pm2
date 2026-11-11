@@ -23,7 +23,7 @@ export function ProcessCards({
   onOpenProject,
 }: {
   processes: Process[];
-  busy: number | null;
+  busy: Process["id"] | null;
   onAction: (process: Process, action: ProcessAction) => void;
   onLogs: (process: Process) => void;
   onAdd: () => void;
@@ -46,19 +46,19 @@ export function ProcessCards({
             />
             <ProcessStatus status={process.status} />
           </div>
-          <h3>{process.name}</h3>
           <div className="application-card-label">
-            <small>{t("Nome de exibição")}</small>
             <ProcessLabel
               process={process}
               busy={busy !== null}
               onSave={onLabelSave}
             />
           </div>
+          {process.label && <p className="text-sm text-muted">{process.name}</p>}
+          {process.applicationUrl && <a className="text-sm text-link" href={process.applicationUrl} target="_blank" rel="noopener noreferrer">{t("Abrir aplicação")}</a>}
           <div className="application-card-label"><small>{t("Projeto")}</small><ProcessProject process={process} busy={busy !== null} onProjectEdit={onProjectEdit} onOpenProject={onOpenProject} /></div>
           <ProcessPort process={process} withLabel />
           <p className="application-card-meta">
-            id {process.id} · PID {process.pid || "—"} · {process.mode}
+            {process.startProjectId ? t("Aguardando início pelo projeto") : <>id {process.id} · PID {process.pid || "—"} · {process.mode}</>}
           </p>
           <dl className="application-card-metrics">
             <div>

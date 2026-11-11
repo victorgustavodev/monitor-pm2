@@ -21,7 +21,7 @@ export function ProcessTable({
   onOpenProject,
 }: {
   processes: Process[];
-  busy: number | null;
+  busy: Process["id"] | null;
   onAction: (process: Process, action: ProcessAction) => void;
   onLogs: (process: Process) => void;
   onLabelSave: SaveProcessLabel;
@@ -32,7 +32,6 @@ export function ProcessTable({
         <thead className="bg-canvas text-xs uppercase tracking-wider text-muted">
           <tr>
             <th className="px-5 py-3">{t("Aplicação")}</th>
-            <th className="px-3 py-3">{t("Nome de exibição")}</th>
             <th className="px-3">{t("Projeto")}</th>
             <th>{t("Status")}</th>
             <th>{t("Porta")}</th>
@@ -50,17 +49,12 @@ export function ProcessTable({
               className="border-t border-line/70 transition hover:bg-hover/60"
             >
               <td className="px-5 py-4">
-                <div className="font-medium">{process.name}</div>
+                <ProcessLabel process={process} busy={busy !== null} onSave={onLabelSave} />
+                {process.label && <div className="mt-1 text-xs text-muted">{process.name}</div>}
+                {process.applicationUrl && <a className="text-xs text-link" href={process.applicationUrl} target="_blank" rel="noopener noreferrer">{t("Abrir aplicação")}</a>}
                 <div className="mt-0.5 text-xs text-muted">
-                  id {process.id} · PID {process.pid || "—"} · {process.mode}
+                  {process.startProjectId ? t("Aguardando início pelo projeto") : <>id {process.id} · PID {process.pid || "—"} · {process.mode}</>}
                 </div>
-              </td>
-              <td className="px-3 py-4">
-                <ProcessLabel
-                  process={process}
-                  busy={busy !== null}
-                  onSave={onLabelSave}
-                />
               </td>
               <td className="px-3 py-4"><ProcessProject process={process} busy={busy !== null} onProjectEdit={onProjectEdit} onOpenProject={onOpenProject} /></td>
               <td>

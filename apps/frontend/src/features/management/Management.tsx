@@ -1,7 +1,9 @@
 import { dateLocale } from "../../i18n";
 import { t } from "../../i18n";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../services/api";
+import { LogTerminal } from "../../components/log-terminal/LogTerminal";
+import type { Process } from "../processes/processes";
 
 export type ManagementPanel = "users" | "logs";
 type User = {
@@ -34,16 +36,26 @@ export function Management({
   onSessionExpired,
   onBusyChange,
   onRoleChanged,
+  processes,
 }: {
   panel: ManagementPanel;
   onSessionExpired: () => void;
   onBusyChange: (busy: boolean) => void;
   onRoleChanged: (username: string, role: User["role"]) => void;
+  processes: Process[];
 }) {
   const [users, setUsers] = useState<User[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
-  const [kind, setKind] = useState("audit");
-  const [processId, setProcessId] = useState("");
+  const [kind, setKind] = useState("process");
+  const [processName, setProcessName] = useState("");
+  const [sources, setSources] = useState<Array<{ name: string }>>([]);
+  const requestId = useRef(0);
+  const applications = useMemo(() => {
+    const names = new Map(sources.map(source => [source.name, source.name]));
+    for (const process of processes) if (!process.startProjectId || process.label)
+      names.set(process.name, process.label ? `${process.label} (${process.name})` : process.name);
+    return [...names].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [sources, processes]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -71,25 +83,38 @@ export function Management({
 
   const load = useCallback(async () => {
     if (!panel) return;
+    const id = ++requestId.current;
     setLoading(true);
     setError("");
+    setLogs([]);
     try {
       if (panel === "users") setUsers(await api<User[]>("/api/users"));
       if (panel === "logs") {
+        if (kind === "process" && !processName) return;
         const query = new URLSearchParams({ kind, limit: "100" });
-        if (kind === "process" && processId) query.set("processId", processId);
-        setLogs(await api<Log[]>(`/api/logs?${query}`));
+        if (kind === "process") query.set("processName", processName);
+        const rows = await api<Log[]>(`/api/logs?${query}`);
+        if (id === requestId.current) setLogs(rows);
       }
     } catch (reason) {
-      fail(reason);
+      if (id === requestId.current) fail(reason);
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
-  }, [panel, kind, processId, fail]);
+  }, [panel, kind, processName, fail]);
 
   useEffect(() => {
     void load();
+    return () => { requestId.current++; };
   }, [load]);
+  useEffect(() => {
+    if (panel !== "logs") return;
+    let active = true;
+    void api<Array<{ name: string }>>("/api/logs/applications")
+      .then(rows => { if (active) setSources(rows); })
+      .catch(reason => { if (active) fail(reason); });
+    return () => { active = false; };
+  }, [panel, fail]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -254,29 +279,30 @@ export function Management({
                   onChange={(event) => setKind(event.target.value)}
                   className={inputStyle}
                 >
+                  <option value="process">{t("Logs das aplicações")}</option>
                   <option value="audit">{t("Ações do painel")}</option>
-                  <option value="process">{t("Saída dos processos")}</option>
                 </select>
               </label>
               {kind === "process" && (
                 <label className="text-sm">
-                  {t("ID do processo (opcional)")}
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={processId}
-                    onChange={(event) => setProcessId(event.target.value)}
+                  {t("Aplicação")}
+                  <select
+                    value={processName}
+                    onChange={(event) => setProcessName(event.target.value)}
                     className={inputStyle}
-                  />
+                  >
+                    <option value="">{t("Selecione uma aplicação")}</option>
+                    {applications.map(([name, label]) => <option key={name} value={name}>{label}</option>)}
+                  </select>
                 </label>
               )}
             </div>
-            <p className="mb-3 text-xs text-muted">
+            {kind === "process" && !processName ? <p role="status" className="py-6 text-center text-sm text-muted">{t("Selecione uma aplicação para exibir os logs.")}</p> : <p className="mb-3 text-xs text-muted">
               {t(
                 "Últimos 100 registros. A saída dos processos é coletada a cada 5 segundos.",
               )}
-            </p>
+            </p>}
+            {loading && <p role="status">{t("Carregando…")}</p>}
             <div className="max-h-[500px] space-y-3 overflow-auto">
               {logs.map((log) => (
                 <article
@@ -300,15 +326,13 @@ export function Management({
                       <p className="mt-1 break-all text-xs text-muted">
                         {log.source}
                       </p>
-                      <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-xs leading-5">
-                        {log.content}
-                      </pre>
+                      <LogTerminal content={log.content || ""} label={t("Logs de {0}", { 0: log.processName })} />
                     </>
                   )}
                 </article>
               ))}
             </div>
-            {!loading && !logs.length && (
+            {!loading && !logs.length && (kind !== "process" || processName) && (
               <p className="py-6 text-center text-sm text-muted">
                 {t("Nenhum log salvo para este filtro.")}
               </p>

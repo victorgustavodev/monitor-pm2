@@ -8,8 +8,8 @@ const { promisify } = require("node:util");
 const exec = promisify(execFile);
 
 test(
-  "deploys a new build and returns to an older version in an isolated PM2 daemon",
-  { timeout: 90000 },
+  "recreates builds, verifies executed code and isolates namespaces in a dedicated PM2 daemon",
+  { timeout: 120000 },
   async () => {
     const directory = await mkdtemp(resolve(tmpdir(), "monitor-deployment-"));
     const pm2Home = resolve(directory, "pm2");
@@ -76,12 +76,12 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(rpc)}; conf.DAEMON_PUB_PORT=${JSON.stringi
         await mkdir(build);
         await writeFile(
           resolve(build, "main.js"),
-          `setInterval(() => {}, 1000); console.log('${version}');`,
+          `require('node:fs').writeFileSync('observed.json', JSON.stringify({version:'${version}',release:process.env.RELEASE,obsolete:process.env.OBSOLETE,pid:process.pid})); setInterval(() => {}, 1000);`,
         );
         const config = resolve(build, "ecosystem.config.js");
         await writeFile(
           config,
-          `module.exports={apps:[{name:'isolated-build',script:'./main.js',exec_mode:'fork'}]};`,
+          `module.exports={apps:[{name:'isolated-build',script:'./main.js',exec_mode:'fork',env:{RELEASE:'${version}'${version === "v1" ? ",OBSOLETE:'remove-me'" : ""}}}]};`,
         );
         configs.push(config);
       }
@@ -95,15 +95,20 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(rpc)}; conf.DAEMON_PUB_PORT=${JSON.stringi
           : "../dist/pm2/pm2.service",
       );
       const { parsePm2Output } = require("../dist/pm2/pm2-output");
-      let initialId;
+      const unrelatedScript = resolve(directory, "unrelated.js");
+      await writeFile(unrelatedScript, "setInterval(() => {}, 1000);");
+      await cli(["start", unrelatedScript, "--name", "isolated-build", "--namespace", "other"]);
+      const unrelated = parsePm2Output((await cli(["jlist"])).stdout)[0];
+      let previousPid;
       for (const index of [0, 1, 0]) {
         await deployEcosystem(configs[index]);
         const { stdout } = await cli(["jlist"]);
         const processList = JSON.parse(stdout.slice(stdout.indexOf("[{")));
-        assert.equal(processList.length, 1);
-        const proc = processList[0];
-        if (initialId === undefined) initialId = proc.pm_id;
-        assert.equal(proc.pm_id, initialId);
+        assert.equal(processList.length, 2);
+        const proc = processList.find(row => row.pm2_env.namespace === "default");
+        assert.notEqual(proc.pid, previousPid, "Each publication must create a fresh OS process");
+        previousPid = proc.pid;
+        assert.equal(processList.find(row => row.pm2_env.namespace === "other").pid, unrelated.pid);
         assert.equal(
           proc.pm2_env.pm_exec_path,
           resolve(directory, index === 0 ? "v1" : "v2", "main.js"),
@@ -113,8 +118,19 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(rpc)}; conf.DAEMON_PUB_PORT=${JSON.stringi
           resolve(directory, index === 0 ? "v1" : "v2"),
         );
         assert.equal(proc.pm2_env.status, "online");
-        assert.equal(parsePm2Output(stdout).length, 1);
+        assert.equal(parsePm2Output(stdout).length, 2);
+        const observed = JSON.parse(await readFile(resolve(directory, index === 0 ? "v1" : "v2", "observed.json"), "utf8"));
+        assert.equal(observed.version, index === 0 ? "v1" : "v2");
+        assert.equal(observed.release, observed.version);
+        assert.equal(observed.pid, proc.pid);
+        assert.equal(observed.obsolete, index === 0 ? "remove-me" : undefined, "Removed ecosystem variables cannot survive a new build");
       }
+      // Project builds overwrite the same destination directory, unlike legacy version folders.
+      await writeFile(resolve(directory, "v1", "main.js"), "require('node:fs').writeFileSync('observed.json',JSON.stringify({version:'patched-in-place',pid:process.pid}));setInterval(() => {},1000);");
+      await deployEcosystem(configs[0]);
+      const patched = JSON.parse(await readFile(resolve(directory, "v1", "observed.json"), "utf8"));
+      assert.equal(patched.version, "patched-in-place");
+      assert.notEqual(patched.pid, previousPid);
       const invalid = resolve(directory, "invalid");
       await mkdir(invalid);
       await writeFile(
@@ -127,7 +143,7 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(rpc)}; conf.DAEMON_PUB_PORT=${JSON.stringi
       );
       const running = await cli(["jlist"]);
       assert.equal(
-        JSON.parse(running.stdout.slice(running.stdout.indexOf("[{")))[0]
+        JSON.parse(running.stdout.slice(running.stdout.indexOf("[{"))).find(row => row.pm2_env.namespace === "default")
           .pm2_env.pm_exec_path,
         resolve(directory, "v1", "main.js"),
       );
@@ -144,13 +160,25 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(rpc)}; conf.DAEMON_PUB_PORT=${JSON.stringi
       );
       await stopProjectProcesses(resolve(directory, "v1"), preview.revision);
       const stopped = parsePm2Output((await cli(["jlist"])).stdout);
-      assert.equal(stopped.length, 1, "Stopping keeps the process registered");
-      assert.equal(stopped[0].pm2_env.status, "stopped");
+      assert.equal(stopped.length, 2, "Stopping keeps the process registered");
+      assert.equal(stopped.find(row => row.pm2_env.namespace === "default").pm2_env.status, "stopped");
       assert.equal(
-        JSON.parse(await readFile(resolve(pm2Home, "dump.pm2"), "utf8"))[0]
+        JSON.parse(await readFile(resolve(pm2Home, "dump.pm2"), "utf8")).find(row => row.namespace === "default")
           .status,
         "stopped",
       );
+      for (const instances of [2, 1]) {
+        await writeFile(configs[0], `module.exports={apps:[{name:'isolated-build',script:'./main.js',exec_mode:'cluster',instances:${instances}}]};`);
+        await deployEcosystem(configs[0]);
+        const cluster = parsePm2Output((await cli(["jlist"])).stdout);
+        assert.equal(cluster.filter(row => row.pm2_env.namespace === "default").length, instances);
+        assert.ok(cluster.every(row => row.pm2_env.status === "online"));
+        assert.equal(cluster.find(row => row.pm2_env.namespace === "other").pid, unrelated.pid);
+      }
+      await writeFile(resolve(invalid, "crash.js"), "throw new Error('startup failure');");
+      await writeFile(resolve(invalid, "ecosystem.config.js"), "module.exports={apps:[{name:'crashing-build',script:'./crash.js',autorestart:false}]};");
+      await assert.rejects(deployEcosystem(resolve(invalid, "ecosystem.config.js")), /não permaneceram online/);
+      assert.equal(parsePm2Output((await cli(["jlist"])).stdout).find(row => row.pm2_env.namespace === "other").pid, unrelated.pid);
     } finally {
       await cli(["kill"]).catch(() => {});
       if (oldNodeOptions === undefined) delete process.env.NODE_OPTIONS;

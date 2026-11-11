@@ -1,4 +1,5 @@
 import { ProcessProjectDialog } from "../features/processes/components/ProcessProjectDialog";
+import { LogTerminal } from "../components/log-terminal/LogTerminal";
 import type { ProcessProjectLink } from "../features/processes/processes";
 import { dateLocale } from "../i18n";
 import { t } from "../i18n";
@@ -47,9 +48,12 @@ export function App() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [processes, setProcesses] = useState<Process[]>([]);
   const [loading, setLoading] = useState(true);
+  const loadSequence = useRef(0);
+  const loadPending = useRef(false);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState<number | null>(null);
+  const [busy, setBusy] = useState<Process["id"] | null>(null);
+  const actionPending = useRef(false);
   const [linkProcess, setLinkProcess] = useState<Process | null>(null);
   const [projectSaving, setProjectSaving] = useState(false);
   const [labelSaving, setLabelSaving] = useState(false);
@@ -65,20 +69,24 @@ export function App() {
 
   const sessionExpired = useCallback(() => setAuthenticated(false), []);
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
+    loadPending.current = true;
     try {
       setLoading(true);
       const rows = await api<Process[]>("/api/processes");
+      if (sequence !== loadSequence.current) return;
       setProcesses((current) => mergeProcessLabels(rows, current));
       setConnected(true);
       setUpdatedAt(new Date());
       setError("");
     } catch (reason) {
+      if (sequence !== loadSequence.current) return;
       setConnected(false);
       if (reason instanceof ApiError && reason.status === 401)
         setAuthenticated(false);
       setError((reason as Error).message);
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) { loadPending.current = false; setLoading(false); }
     }
   }, []);
   const buildCompleted = useCallback(async () => { if (autoRefreshRef.current) await load(); }, [load]);
@@ -121,7 +129,7 @@ export function App() {
         setLiveConnected(true);
         setLiveTick(value => value + 1);
         setUpdatedAt(new Date());
-        setLoading(false);
+        if (!loadPending.current) setLoading(false);
         setError("");
       });
       stream.addEventListener("live", () => {
@@ -135,7 +143,7 @@ export function App() {
         };
         setConnected(false);
         setLiveConnected(false);
-        setLoading(false);
+        if (!loadPending.current) setLoading(false);
         setError(data.message);
       });
       stream.addEventListener("session-expired", () => {
@@ -148,7 +156,7 @@ export function App() {
         if (!active) return;
         setConnected(false);
         setLiveConnected(false);
-        setLoading(false);
+        if (!loadPending.current) setLoading(false);
         setError(
           t("Conexão de atualizações interrompida. Tentando reconectar…"),
         );
@@ -192,17 +200,20 @@ export function App() {
   }
 
   async function executeAction(process: Process, action: ProcessAction) {
-    if (publication.processesLocked || busy !== null) return;
+    if (publication.processesLocked || busy !== null || actionPending.current) return;
+    actionPending.current = true;
     setBusy(process.id);
     setError("");
     try {
-      await api(`/api/processes/${process.id}/${action}`, { method: "POST", body: JSON.stringify({ name: process.name, namespace: process.namespace || "default" }) });
+      await api(process.startProjectId ? `/api/projects/${process.startProjectId}/start` : `/api/processes/${process.id}/${action}`, { method: "POST", body: JSON.stringify({ name: process.name, namespace: process.namespace || "default" }) });
       await load();
     } catch (reason) {
+      if (process.startProjectId) await load();
       setError((reason as Error).message);
       if (reason instanceof ApiError && reason.status === 401) setAuthenticated(false);
       throw reason;
     } finally {
+      actionPending.current = false;
       setBusy(null);
     }
   }
@@ -280,7 +291,7 @@ export function App() {
         `/api/processes/${process.id}/logs?lines=150`,
       );
       setLogs({
-        name: process.name,
+        name: process.label || process.name,
         content: data.logs || t("Nenhum log disponível."),
       });
     } catch (reason) {
@@ -370,7 +381,7 @@ export function App() {
         onNavigate={setView}
         username={username}
         count={processes.length}
-        busy={managementBusy || loggingOut || labelSaving || projectSaving || addingProcess || pickingFile}
+        busy={managementBusy || loggingOut || labelSaving || projectSaving || addingProcess || pickingFile || actionPending.current}
         onLogout={logout}
       />
       <main key={view} id="dashboard-main" className="dashboard-content page-enter" tabIndex={-1}>
@@ -417,7 +428,7 @@ export function App() {
           <span
             className={`sync-dot ${connected ? "bg-success" : loading ? "bg-warning" : "bg-danger"}`}
           />
-          <span>
+          <span className="sync-updated">
             {loading
               ? t("Atualizando dados…")
               : updatedAt
@@ -427,9 +438,9 @@ export function App() {
                 : t("Aguardando dados do PM2")}
           </span>
           <span className="sync-divider" />
-          <button type="button" className={`live-indicator ${!autoRefresh ? "paused" : liveConnected ? "active" : "reconnecting"}`} aria-pressed={autoRefresh} onClick={() => setAutoRefresh(value => !value)} title={t(autoRefresh ? "Pausar atualização ao vivo" : "Retomar atualização ao vivo")}>
+          <button type="button" className={`live-indicator ${!autoRefresh ? "paused" : liveConnected ? "active" : "reconnecting"}`} aria-pressed={autoRefresh} onClick={() => setAutoRefresh(value => !value)} title={t(autoRefresh ? "Pausar atualizações" : "Retomar atualizações")}>
             <span key={liveTick} className="live-indicator-dot" aria-hidden="true" />
-            {t(!autoRefresh ? "Atualização ao vivo pausada" : liveConnected ? "Atualização ao vivo" : "Conectando atualização ao vivo…")}
+            {t(autoRefresh ? "Pausar" : "Retomar")}
           </button>
         </div>
         {error && (
@@ -475,6 +486,7 @@ export function App() {
         )}
         {managementPanel && (
           <Management
+            processes={processes}
             key={managementPanel}
             panel={managementPanel}
             onSessionExpired={sessionExpired}
@@ -484,6 +496,8 @@ export function App() {
         )}
         {view === "projects" && (
           <Projects
+            processes={processes}
+            processesConnected={connected}
             publication={publication}
             projectId={selectedProjectId}
             onSelectProject={setSelectedProjectId}
@@ -629,9 +643,7 @@ export function App() {
                 <X size={18} />
               </button>
             </header>
-            <pre className="overflow-auto p-5 text-xs leading-6 text-content">
-              {logs.content}
-            </pre>
+            <LogTerminal content={logs.content} label={t("Logs de {0}", { 0: logs.name })} />
           </section>
         </div>
       )}

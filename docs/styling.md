@@ -97,7 +97,9 @@ Configurações é um botão de expansão com `aria-expanded` e `aria-controls`.
 
 ## Transições de navegação
 
-O painel de publicações usa posição fixa no canto superior direito, largura máxima de 360 px, lista com rolagem e opção de recolher. Em telas menores, fica abaixo da navegação superior. Cada item usa progresso nativo e texto de estado; falhas usam tokens de perigo. O modal de confirmação de parada/exclusão usa `--ds-color-danger` para a mensagem e mantém Cancelar como foco inicial. O indicador de atualização ao vivo usa tokens de sucesso, atenção e neutros, com texto para os três estados. Spinner e pulso respeitam `prefers-reduced-motion`.
+O painel de publicações usa posição fixa no canto superior direito, largura máxima de 360 px, lista com rolagem e opção de recolher. Em telas menores, fica abaixo da navegação superior. Cada item usa progresso nativo e texto de estado; falhas usam tokens de perigo. O modal de confirmação de parada/exclusão usa `--ds-color-danger` para a mensagem e mantém Cancelar como foco inicial. O horário de atualização usa `--ds-color-danger`, conforme solicitado, e o controle compacto Pausar/Retomar preserva a pausa da sessão. Spinner e pulso respeitam `prefers-reduced-motion`.
+
+Os logs usam uma superfície escura local, sem alterar o tema claro da aplicação. A família `--ds-color-terminal-*` em `tokens.css` define fundo, texto e as oito cores ANSI. O terminal usa fonte monoespaçada, quebra de linhas longas, rolagem e foco por teclado. Sequências de controle são removidas; apenas cores básicas e negrito são apresentados, sempre como texto React.
 
 As transições usam CSS, sem dependências ou atrasos artificiais nas ações. A área principal recebe entrada de 180 ms, com opacidade e deslocamento de 6 px, somente ao trocar de área (`key={view}`). Atualizações de métricas, busca, idioma e respostas da API não reiniciam a animação nem remontam a tela.
 

@@ -19,6 +19,8 @@ Hooks reutilizáveis por **features distintas** ficam em `src/hooks/`. Hooks esp
 
 ## Fonte única de verdade
 
+O carregamento inicial e o botão Atualizar da Home mostram um indicador na área de processos. Eventos SSE recebidos durante essa consulta não encerram seu loading; apenas a requisição atual pode encerrá-lo. Métricas periódicas não remontam a lista. Projetos usa a mesma coleção de processos da Home para informar aplicações não iniciadas e mantém bloqueio de navegação durante o início local. Após essa ação, revalida os processos inclusive em falha parcial.
+
 Nomes de exibição dos processos chegam junto aos dados de consulta e SSE. Após salvar, a resposta atualiza a mesma coleção de processos usada por lista e cards; a busca considera nome técnico e de exibição. `mergeProcessLabels` preserva um nome com `labelUpdatedAt` mais recente quando chega uma coleta antiga, sem reaplicar o nome a outro processo que reutilizou o ID. A remoção mantém um registro com nome vazio e data para também impedir que um evento antigo restaure o valor removido. O rascunho do editor é local e não é sobrescrito durante a digitação por atualizações de métricas.
 
 - Derive contadores, filtros e visões da mesma coleção de dados quando possível.

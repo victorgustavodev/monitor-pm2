@@ -1,6 +1,7 @@
 import type { BuildPublications } from "./useBuildPublication";
+import type { Process } from "../processes/processes";
 import { t } from "../../i18n";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowLeft,
   BookOpen,
@@ -34,6 +35,8 @@ export function Projects({
   onSessionExpired,
   onBusyChange,
   publication,
+  processes,
+  processesConnected,
 }: {
   projectId: string | null;
   onSelectProject: (id: string | null) => void;
@@ -41,6 +44,8 @@ export function Projects({
   onSessionExpired: () => void;
   onBusyChange: (busy: boolean) => void;
   publication: BuildPublications;
+  processes: Process[];
+  processesConnected: boolean;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +58,8 @@ export function Projects({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [revision, setRevision] = useState(0);
+  const starting = useRef(false);
+  const [startingId, setStartingId] = useState<string | null>(null);
   const busy = formBusy || deployBusy;
   const selected = projects.find((project) => project._id === projectId);
   const projectLocked = Boolean(selected && (selected.deploying || publication.isProjectBusy(selected._id)));
@@ -95,6 +102,31 @@ export function Projects({
     await onStarted();
   }, [load, onStarted]);
 
+  async function start(project: Project) {
+    if (starting.current || busy || publication.processesLocked || project.deploying) return;
+    starting.current = true;
+    setStartingId(project._id); setFormBusy(true); setError(""); setNotice("");
+    try {
+      await api(`/api/projects/${project._id}/start`, { method: "POST" });
+      setNotice(t("Aplicações iniciadas com os arquivos locais."));
+    } catch (reason) { fail(reason); }
+    finally {
+      await onStarted();
+      starting.current = false; setStartingId(null); setFormBusy(false);
+    }
+  }
+  function runtime(project: Project) {
+    const linked = processes.filter(process => process.projectId === project._id);
+    const online = linked.filter(process => process.status === "online").length;
+    return <div className="flex flex-wrap items-center gap-3 py-3">
+      <span className="text-sm text-muted">{!processesConnected ? t("Estado do PM2 indisponível") : online && online === linked.length ? t("Aplicações em execução") : online ? t("Há aplicações não iniciadas") : t("Não iniciada")}</span>
+      {(!processesConnected || !linked.length || online < linked.length) && <button className="project-button secondary"
+        disabled={busy || publication.processesLocked || project.deploying}
+        onClick={() => void start(project)}>{t(startingId === project._id ? "Iniciando…" : "Iniciar sem build")}</button>}
+      {project.applicationUrl && <a className="project-text-link" href={project.applicationUrl} target="_blank" rel="noopener noreferrer">{t("Abrir aplicação")}</a>}
+    </div>;
+  }
+
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -109,6 +141,7 @@ export function Projects({
       await load();
       setCreating(false);
       onSelectProject(project._id);
+      await onStarted();
     } catch (reason) {
       fail(reason);
     } finally {
@@ -137,6 +170,7 @@ export function Projects({
     setError("");
     try {
       await load();
+      await onStarted();
       setRevision((value) => value + 1);
     } catch (reason) {
       fail(reason);
@@ -165,6 +199,7 @@ export function Projects({
       );
       setRevision((value) => value + 1);
       setNotice(t("Projeto atualizado."));
+      await onStarted();
     } catch (reason) {
       fail(reason);
     } finally {
@@ -296,6 +331,10 @@ export function Projects({
                   </label>
                 </div>
                 <label>
+                  {t("Link da aplicação")}
+                  <input name="applicationUrl" type="url" placeholder="https://app.exemplo.com" maxLength={2048} disabled={busy} />
+                </label>
+                <label>
                   {t("Pasta principal na VM")}
                   <input
                     name="rootPath"
@@ -374,6 +413,7 @@ export function Projects({
                     <FolderOpen size={15} />
                     {project.rootPath}
                   </p>
+                  {runtime(project)}
                   <div className="project-card-footer">
                     <span>
                       <Package size={15} />
@@ -476,6 +516,8 @@ export function Projects({
               <FolderOpen size={15} />
               <code>{selected.rootPath}</code>
             </p>
+            {runtime(selected)}
+            <p className="text-sm text-muted">{t("Iniciar sem build executa o ecosystem existente na pasta do projeto.")}</p>
           </section>
           {selected.deploymentError && (
             <p className="project-message error" role="status">

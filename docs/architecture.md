@@ -142,6 +142,8 @@ O backend preserva o ecosystem existente no destino, inclusive em republicaçõe
 Consulte também `components.md`, `state-management.md` e `api-integration.md`.
 ## Publicações em segundo plano
 
+O worker de publicação valida o ecosystem, remove por ID todas as instâncias correspondentes a nome e namespace e cria processos novos com a configuração normalizada pelo PM2 instalado. Não usa restart/reload. A verificação de inicialização confere instâncias, caminhos, estado online e estabilidade de PID/reinícios antes de salvar a lista e concluir a publicação. Processos de outros nomes/namespaces são preservados. O formulário informa a interrupção temporária e a prioridade do ecosystem local, que continua protegido contra sobrescrita pelo pacote.
+
 `App` mantém uma única instância de `features/projects/useBuildPublication.ts`, compartilhada por `Projects`, `BuildHistory` e `components/BuildProgressPanel.tsx`. O painel aparece no canto superior direito em todas as telas autenticadas, pode ser recolhido e mostra uma caixa por publicação, com etapas, progresso, resultado e diagnóstico. A assinatura SSE global restaura a lista após reconexão ou recarregamento; navegar não encerra publicações. Somente o autor pode cancelar, até o início da execução PM2. Resultados podem ser dispensados localmente; operações em andamento continuam visíveis.
 
 O backend reserva o projeto ao criar a operação, antes do upload, e mantém o bloqueio até publicação ou recuperação. A reserva sem envio expira após cinco minutos. `project-operations.ts` valida a identidade da operação que possui a reserva; edição/exclusão e gravação de `.env` não podem concorrer no mesmo projeto. Durante qualquer publicação, comandos PM2 e alterações de nome/vínculo pela API são bloqueados para todos os usuários; a UI também desabilita os botões dos processos. Projetos diferentes continuam publicando em paralelo. Os bloqueios são locais à instância do backend: execute uma única instância.
@@ -150,7 +152,13 @@ O backend reserva o projeto ao criar a operação, antes do upload, e mantém o 
 
 `ProcessActionConfirmation` apresenta um dialog modal acessível antes de parar/excluir, com nome do processo, consequências em vermelho e foco inicial em Cancelar. A confirmação bloqueia cliques repetidos durante o envio; a API confere nome/namespace quando enviados para impedir ações sobre um ID reaproveitado. Reiniciar e iniciar mantêm o fluxo direto.
 
-A Home usa um indicador clicável para pausar/retomar a atualização ao vivo. O ponto pulsa a cada coleta bem-sucedida, inclusive quando as métricas não mudam, pelo evento SSE `live`. Os estados ativo, pausado e conectando são expressos por texto e tokens semânticos, com animação apenas sem preferência por movimento reduzido. A pausa de métricas não desativa a assinatura de publicações nem seus bloqueios.
+A Home mostra o horário de atualização em vermelho e um controle compacto Pausar/Retomar, sem o texto “Atualização ao vivo”. O evento SSE `live` continua sinalizando coletas bem-sucedidas. A pausa de métricas não desativa a assinatura de publicações nem seus bloqueios. Carregamento inicial e atualização manual mostram loading na área das aplicações; as coletas automáticas preservam a lista e o foco.
+
+O nome de exibição ocupa a posição principal na Lista e nos Cards; quando preenchido, o nome técnico aparece abaixo. O link HTTP(S) opcional pertence ao projeto e aparece também nas aplicações vinculadas.
+
+Logs começa com a seleção de uma aplicação, incluindo nomes com histórico salvo. A auditoria permanece como opção de tipo. `components/log-terminal/LogTerminal.tsx` é compartilhado entre essa tela e o modal da Home: converte cores ANSI em spans de texto, remove comandos de terminal e nunca interpreta HTML.
+
+`pm2/process-inventory.ts` registra identidades observadas de aplicações vinculadas a projetos, isoladas por PM2_HOME. A consulta e o SSE de processos também incluem entradas `not_started` para identidades ausentes e projetos ainda sem processos conhecidos. Essas entradas iniciam o projeto pelo ecosystem local; não recebem comandos destinados a IDs do daemon.
 
 ## Vínculo de processos a projetos
 

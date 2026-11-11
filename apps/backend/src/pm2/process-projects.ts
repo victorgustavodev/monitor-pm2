@@ -49,6 +49,7 @@ export async function resolveProcessProjects(rows: Pm2Row[]) {
         projectObservedAt: observedAt,
         projectId: project?._id.toHexString() || null,
         projectName: project?.name || null,
+        applicationUrl: project?.applicationUrl || "",
         projectUpdatedAt: updatedAt ? new Date(updatedAt).toISOString() : null,
       }];
     }),

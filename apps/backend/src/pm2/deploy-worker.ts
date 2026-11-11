@@ -1,6 +1,8 @@
 import pm2, { type ProcessDescription, type StartOptions } from "pm2";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { cpus } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 
 type AppConfig = StartOptions & {
   pm_exec_path: string;
@@ -13,8 +15,7 @@ type Pm2Process = Omit<ProcessDescription, "pm2_env"> & {
     exec_mode?: string;
   };
 };
-// O CLI filtra pm_exec_path/pm_cwd no reload de um ecosystem. A API interna
-// do PM2 fixado no package.json permite atualizar esses caminhos por ID.
+// Use the installed PM2 parser and normalizer before removing any process.
 const common = require("pm2/lib/Common") as {
   parseConfig: (
     bytes: Buffer,
@@ -25,6 +26,7 @@ const common = require("pm2/lib/Common") as {
     options: { cwd: string; pm2_home: string },
     app: StartOptions,
   ) => AppConfig;
+  mergeEnvironmentVariables: (app: AppConfig) => Record<string, unknown>;
 };
 const client = (
   pm2 as unknown as {
@@ -49,6 +51,41 @@ function list(): Promise<Pm2Process[]> {
   );
 }
 
+function matches(proc: Pm2Process, app: AppConfig) {
+  return proc.name === app.name &&
+    (proc.pm2_env?.namespace || "default") === (app.namespace || "default");
+}
+
+async function verifyStarted(apps: AppConfig[]) {
+  const deadline = Date.now() + 10_000;
+  let stableSince = 0, previous = "", diagnostic = "";
+  do {
+    const rows = await list();
+    const signatures: unknown[] = [];
+    const failures: string[] = [];
+    for (const app of apps) {
+      const instances = app.instances === undefined ? 1 : String(app.instances) === "max" ? 0 : Number(app.instances);
+      const expected = Math.max(1, instances <= 0 ? cpus().length + instances : instances);
+      const matching = rows.filter(proc => matches(proc, app));
+      if (matching.length !== expected || matching.some(proc =>
+        proc.pm2_env?.status !== "online" || !proc.pid ||
+        proc.pm2_env.pm_exec_path !== app.pm_exec_path || proc.pm2_env.pm_cwd !== app.pm_cwd))
+        failures.push(`${app.name} (${app.namespace || "default"}): ${matching.map(proc => proc.pm2_env?.status || "unknown").join(", ") || "não iniciada"}`);
+      signatures.push(matching.map(proc => [proc.pm_id, proc.pid, proc.pm2_env?.restart_time]));
+    }
+    diagnostic = failures.join("; ");
+    const signature = JSON.stringify(signatures);
+    if (failures.length || signature !== previous) stableSince = 0;
+    if (!failures.length) {
+      stableSince ||= Date.now();
+      if (Date.now() - stableSince >= 1_000) return;
+    }
+    previous = signature;
+    await delay(250);
+  } while (Date.now() < deadline);
+  throw new Error(`As aplicações não permaneceram online com a configuração publicada: ${diagnostic || "processos reiniciando durante a verificação"}. Confira os logs.`);
+}
+
 async function deploy() {
   const path = resolve(process.argv[2]);
   const original = common.parseConfig(readFileSync(path), path);
@@ -69,7 +106,8 @@ async function deploy() {
       { cwd, pm2_home: pm2Home },
       { ...app, cwd },
     );
-    const key = `${normalized.namespace || "default"}:${normalized.name}`;
+    normalized.namespace ||= "default";
+    const key = JSON.stringify([normalized.namespace || "default", normalized.name]);
     if (names.has(key))
       throw new Error("O ecosystem contém nomes de processos duplicados.");
     names.add(key);
@@ -78,39 +116,27 @@ async function deploy() {
   await connect();
   try {
     const processes = await list();
-    for (const app of apps) {
-      const matching = processes.filter(
-        (proc) =>
-          proc.name === app.name &&
-          (proc.pm2_env?.namespace || "default") ===
-            (app.namespace || "default"),
-      );
-      if (!matching.length) {
-        await new Promise<void>((resolveDone, reject) =>
-          pm2.start(
-            { ...app, script: app.pm_exec_path, cwd: app.pm_cwd },
-            (error) => (error ? reject(error) : resolveDone()),
-          ),
-        );
-      } else {
-        for (const proc of matching) {
-          const action =
-            proc.pm2_env?.exec_mode === "cluster_mode"
-              ? "reloadProcessId"
-              : "restartProcessId";
-          await new Promise<void>((resolveDone, reject) =>
-            client.executeRemote(
-              action,
-              {
-                id: proc.pm_id,
-                env: { ...app.env, current_conf: app },
-              },
-              (error) => (error ? reject(error) : resolveDone()),
-            ),
-          );
-        }
-      }
+    for (const proc of processes.filter(proc => apps.some(app => matches(proc, app)))) {
+      const current = (await list()).find(row => row.pm_id === proc.pm_id);
+      if (!current || current.name !== proc.name ||
+          current.pm2_env?.namespace !== proc.pm2_env?.namespace ||
+          current.pm2_env?.pm_exec_path !== proc.pm2_env?.pm_exec_path ||
+          current.pm2_env?.pm_cwd !== proc.pm2_env?.pm_cwd || proc.pm_id === undefined)
+        throw new Error("Os processos mudaram durante a publicação. Atualize a lista e tente novamente.");
+      await new Promise<void>((resolveDone, reject) =>
+        pm2.delete(proc.pm_id!, error => error ? reject(error) : resolveDone()));
     }
+    for (const app of apps) {
+      app.env = { ...app.env, PM2_HOME: pm2Home };
+      const environment = common.mergeEnvironmentVariables(app);
+      delete environment.current_conf;
+      // PM2's public ecosystem start matches by name alone. Preparing a fresh
+      // normalized app avoids restarting a same-name app in another namespace.
+      await new Promise<void>((resolveDone, reject) =>
+        client.executeRemote("prepare", { ...app, env: environment },
+          error => error ? reject(error) : resolveDone()));
+    }
+    await verifyStarted(apps);
   } finally {
     pm2.disconnect();
   }

@@ -17,6 +17,7 @@ import { processIdentity, processScope, resolveProcessProjects } from "./process
 import { processLabels, processProjects, projects } from "../common/database";
 import type { Pm2Row } from "./pm2-output";
 import { withManualProcessAction } from "../projects/build-progress";
+import { includeUnstartedProcesses } from "./process-inventory";
 
 export const startEcosystem = (
   ...args: Parameters<typeof startEcosystemInternal>
@@ -38,7 +39,9 @@ export interface ProcessView extends ProcessPorts {
   label: string;
   labelUpdatedAt: string | null;
   namespace: string;
-  id: number;
+  id: number | string;
+  startProjectId?: string;
+  applicationUrl?: string;
   name: string;
   status: string;
   pid: number;
@@ -255,6 +258,7 @@ export async function setProcessProject(
       $set: { projectId: project?._id || null, updatedAt, updatedBy: username },
     }, { upsert: true });
     return { ...identity, projectId: project?._id.toHexString() || null,
+      applicationUrl: project?.applicationUrl || "",
       projectName: project?.name || null, projectUpdatedAt: updatedAt.toISOString() };
   });
 }
@@ -277,7 +281,7 @@ export async function listProcesses(): Promise<ProcessView[]> {
       record,
     ]),
   );
-  return rows.map((item, index) => {
+  return includeUnstartedProcesses(rows.map((item, index) => {
     const identity = processIdentity(item);
     const metadata = labels.get(
       JSON.stringify([identity.name, identity.namespace]),
@@ -298,7 +302,7 @@ export async function listProcesses(): Promise<ProcessView[]> {
       mode: String(item.pm2_env?.exec_mode ?? "unknown").replace("_mode", ""),
       version: item.pm2_env?.version ? String(item.pm2_env.version) : null,
     };
-  });
+  }));
 }
 
 async function assertExists(id: number) {

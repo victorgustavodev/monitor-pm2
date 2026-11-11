@@ -23,6 +23,16 @@
   --palette-red-700: #b91c1c;
 
   /* Superfícies e conteúdo. */
+  --ds-color-terminal-background: var(--palette-kpmg-dark-blue);
+  --ds-color-terminal-content: var(--palette-neutral-100);
+  --ds-color-terminal-muted: var(--palette-neutral-200);
+  --ds-color-terminal-red: var(--palette-red-200);
+  --ds-color-terminal-green: var(--palette-green-200);
+  --ds-color-terminal-yellow: var(--palette-amber-200);
+  --ds-color-terminal-blue: var(--palette-kpmg-light-blue);
+  --ds-color-terminal-magenta: var(--palette-kpmg-pink);
+  --ds-color-terminal-cyan: var(--palette-kpmg-pacific-blue);
+  --ds-color-terminal-white: var(--palette-white);
   --ds-color-canvas: var(--palette-neutral-50);
   --ds-color-surface: var(--palette-white);
   --ds-color-subtle: var(--palette-neutral-100);

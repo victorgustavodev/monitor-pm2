@@ -118,6 +118,10 @@ Durante publicações, POSTs de ações de processos/ecosystems e PUTs de nome/v
 
 ## Vínculos de processos
 
+Entradas reais mantêm `id` numérico. Entradas ausentes de projetos usam `id` string com prefixo `project:`, `status: "not_started"` e `startProjectId`; métricas são zero e a única ação PM2 oferecida é `POST /api/projects/:id/start`. Não envie esse identificador sintético às rotas `/api/processes/:id/*`. `applicationUrl` acompanha o vínculo e sua versão no GET/SSE e na resposta de alteração de projeto.
+
+`GET /api/logs/applications` exige sessão e retorna nomes distintos com logs salvos (`[{ name }]`). A UI combina esses nomes com os processos atuais, inicia sem aplicação selecionada e consulta logs somente após a escolha. `GET /api/logs` aceita `processName` exato, além dos filtros anteriores; isso preserva acesso ao histórico após troca de ID e agrupa processos com o mesmo nome. Mantém limite padrão de 100 e máximo de 500 registros. Auditoria continua disponível. Respostas de seleções antigas não substituem a seleção atual.
+
 `GET /api/processes` e o SSE incluem `projectId`, `projectName`, `projectUpdatedAt` (nulos se ausentes) e `projectObservedAt` (data da consulta dos vínculos). `PUT /api/processes/:id/project` exige sessão e recebe `{ name, namespace, projectId }`, com ID de projeto válido ou `null` para remover o vínculo. Retorna `{ name, namespace, projectId, projectName, projectUpdatedAt }`. Valida a identidade atual contra o PM2; ID inexistente retorna 404, identidade desatualizada retorna 409, projeto inexistente retorna 404 e projeto em exclusão/recuperação retorna 409. Não altera processos no daemon.
 
 As APIs legadas de versões e histórico global continuam disponíveis por compatibilidade; a interface usa somente builds vinculados a projetos.

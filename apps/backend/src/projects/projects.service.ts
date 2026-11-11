@@ -5,6 +5,7 @@ import {
   projects,
   projectBuilds,
   processProjects,
+  processInventory,
   type ProjectRecord,
 } from "../common/database";
 import { HttpError } from "../common/http-error";
@@ -13,6 +14,7 @@ import {
   relativeProjectPath,
   validateProjectRoot,
   assertNoLinks,
+  projectPath,
 } from "./project-paths";
 import { withArtifactAccess } from "../common/artifact-access";
 import { env } from "../common/config";
@@ -20,6 +22,8 @@ import {
   processArtifactPaths,
   getProjectProcesses,
   stopProjectProcesses,
+  startEcosystem,
+  listProcesses,
 } from "../pm2/pm2.service";
 import { projectFolder } from "./project-storage";
 import {
@@ -27,7 +31,7 @@ import {
   withProjectOperation,
 } from "./project-operations";
 import { pm2Configuration } from "./pm2-configuration";
-import { activeBuildOperation } from "./build-progress";
+import { activeBuildOperation, withManualProcessAction } from "./build-progress";
 
 export function projectId(raw: unknown) {
   if (typeof raw !== "string" || !/^[a-f0-9]{24}$/i.test(raw))
@@ -82,8 +86,19 @@ async function projectFields(
   excludeId?: ObjectId,
   previousConfig = "",
   previousDocumentation = "",
+  previousUrl = "",
 ) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const applicationUrl = body?.applicationUrl === undefined ? previousUrl : body.applicationUrl;
+  if (typeof applicationUrl !== "string" || applicationUrl.length > 2048)
+    throw new HttpError(400, "Informe um link HTTP ou HTTPS de até 2048 caracteres.");
+  const url = applicationUrl.trim();
+  if (url) {
+    let parsed: URL;
+    try { parsed = new URL(url); } catch { throw new HttpError(400, "Informe um link HTTP ou HTTPS válido."); }
+    if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password)
+      throw new HttpError(400, "Informe um link HTTP ou HTTPS sem credenciais.");
+  }
   const description =
     typeof body?.description === "string" ? body.description.trim() : "";
   if (!name || name.length > 80 || /[\x00-\x1f]/.test(name))
@@ -133,6 +148,7 @@ async function projectFields(
     nameKey: name.toLowerCase(),
     description,
     documentation,
+    applicationUrl: url,
     rootPath,
     rootKey: rootPath.toLowerCase(),
     pm2ConfigPath,
@@ -200,8 +216,10 @@ export async function updateProject(
         id,
         current.pm2ConfigContent || "",
         current.documentation || "",
+        current.applicationUrl || "",
       );
       const rootChanged = current.rootKey !== fields.rootKey;
+      if (rootChanged) await processInventory.deleteMany({ projectId: id });
       await mkdir(fields.rootPath, { recursive: true });
       await projects.updateOne(
         { _id: id },
@@ -286,7 +304,23 @@ export async function deleteProject(
       await processProjects.updateMany({ projectId: id }, {
         $set: { projectId: null, updatedAt: new Date() },
       });
+      await processInventory.deleteMany({ projectId: id });
       await projects.deleteOne({ _id: id });
     }),
   ));
+}
+
+export async function startProject(rawId: unknown) {
+  const id = projectId(rawId);
+  return withManualProcessAction(() => withProjectOperation(id, async () => {
+    const project = await getProject(rawId);
+    assertEditable(project);
+    const path = await projectPath(project.rootPath, project.pm2ConfigPath);
+    await startEcosystem(path);
+    const rows = await listProcesses();
+    const linked = rows.filter(row => row.projectId === id.toHexString());
+    if (!linked.length || linked.some(row => row.status !== "online"))
+      throw new HttpError(502, "O PM2 executou o ecosystem, mas nem todas as aplicações foram iniciadas. Confira os logs e tente iniciar novamente.");
+    return { message: "Aplicações iniciadas com os arquivos locais." };
+  }));
 }

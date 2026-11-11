@@ -6,6 +6,9 @@ import { act, createElement } from "react";
 
 let vite, dom, root, App;
 let failProcesses = false;
+let deferProcesses = false, pendingProcessLoad, pendingLocalStart;
+let deferLogs = false;
+const pendingLogs = new Map();
 let sessionRole = "admin";
 let pendingUser;
 let pendingAction;
@@ -164,6 +167,10 @@ before(
           authenticated: true,
           role: sessionRole,
         });
+      if (url === "/api/processes" && deferProcesses)
+        return new Promise(done => { pendingProcessLoad = () => done(json(processes)); });
+      if (/^\/api\/projects\/[^/]+\/start$/.test(url) && options.method === "POST")
+        return new Promise(done => { pendingLocalStart = () => done(json({ message: "started" })); });
       if (url === "/api/processes")
         return failProcesses
           ? json({ message: "PM2 indisponível." }, 502)
@@ -388,6 +395,13 @@ before(
         );
         return json({ items, total: items.length, page: 1, pageSize: 20 });
       }
+      if (url === "/api/logs/applications") return json([{ name: "archived-app" }]);
+      if (String(url).startsWith("/api/logs?") && new URL(url, "http://localhost").searchParams.get("kind") === "process") {
+        const name = new URL(url, "http://localhost").searchParams.get("processName");
+        const result = [{ _id: name, kind: "process", createdAt: "2026-01-01T00:00:00Z", processName: name, processId: 1, content: `\x1b[32m[Nest] ${name}\x1b[0m <script>literal</script>` }];
+        if (deferLogs) return new Promise(done => pendingLogs.set(name, () => done(json(result))));
+        return json(result);
+      }
       if (String(url).startsWith("/api/logs?"))
         return json([
           {
@@ -542,6 +556,12 @@ test("sidebar expands settings destinations and Home combines metrics with all p
   assert.match(document.querySelector("tbody").textContent, /3000/);
   assert.ok(document.querySelector('[title="Reiniciar"]'));
   await go("Logs");
+  assert.match(document.querySelector("main").textContent, /Selecione uma aplicação para exibir os logs/);
+  await act(async () => {
+    const select = document.querySelector("#management-panel select");
+    select.value = "audit";
+    select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
   assert.match(
     document.querySelector("main").textContent,
     /POST \/api\/auth\/login/,
@@ -562,7 +582,7 @@ test("sidebar expands settings destinations and Home combines metrics with all p
   assert.equal(streams.at(-1).readyState, EventSource.CLOSED);
   assert.match(
     document.querySelector(".dashboard-sync").textContent,
-    /pausada/,
+    /Retomar/,
   );
   await go("Home");
 });
@@ -982,6 +1002,7 @@ test("projects browse local files and keep build publication and history inside 
   projectForm.querySelector('[name="rootPath"]').value =
     "C:\\servicos\\ProjetoY";
   projectForm.querySelector('[name="description"]').value = "Outra aplicação";
+  projectForm.querySelector('[name="applicationUrl"]').value = "https://example.test/project-y";
   await act(async () =>
     projectForm.dispatchEvent(
       new dom.window.Event("submit", { bubbles: true, cancelable: true }),
@@ -997,6 +1018,7 @@ test("projects browse local files and keep build publication and history inside 
   assert.deepEqual(JSON.parse(creation.body), {
     name: "Projeto Y",
     description: "Outra aplicação",
+    applicationUrl: "https://example.test/project-y",
     rootPath: "C:\\servicos\\ProjetoY",
     pm2ConfigPath: "ecosystem.config.js",
   });
@@ -1304,6 +1326,8 @@ test("project editing saves changes and deletion requires the project name while
   await act(async () => button("Editar projeto").click());
   const form = document.querySelector(".project-details .project-form");
   assert.equal(form.querySelector('[name="name"]').value, "Projeto Y");
+  assert.equal(form.querySelector('[name="applicationUrl"]').value, "https://example.test/project-y");
+  form.querySelector('[name="applicationUrl"]').value = "https://example.test/updated";
   form.querySelector('[name="name"]').value = "Projeto Y atualizado";
   form.querySelector('[name="description"]').value = "Nova descrição";
   form.querySelector('[name="rootPath"]').value =
@@ -1332,6 +1356,7 @@ test("project editing saves changes and deletion requires the project name while
   assert.deepEqual(JSON.parse(saved.body), {
     name: "Projeto Y atualizado",
     description: "Nova descrição",
+    applicationUrl: "https://example.test/updated",
     rootPath: "C:\\servicos\\ProjetoY-atualizado",
     pm2ConfigPath: "config/ecosystem.config.js",
   });
@@ -1435,6 +1460,90 @@ test("regular users can open settings but cannot see or fetch user administratio
       (button) => button.textContent.trim() === "Usuários",
     ),
   );
+  await go("Home");
+});
+
+test("logs start with application selection, safely render ANSI and ignore stale results", async () => {
+  await go("Logs");
+  const selects = document.querySelectorAll("#management-panel select");
+  assert.equal(selects[0].value, "process");
+  assert.equal(document.querySelector(".log-terminal"), null);
+  assert.ok([...selects[1].options].some(option => option.value === "archived-app"));
+  const select = async name => act(async () => {
+    selects[1].value = name;
+    selects[1].dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  await select("api-service");
+  const terminal = document.querySelector(".log-terminal");
+  assert.match(terminal.textContent, /\[Nest\] api-service/);
+  assert.ok(!terminal.textContent.includes("\x1b"));
+  assert.match(terminal.querySelector(".terminal-color-2").textContent, /Nest/);
+  assert.equal(terminal.querySelector("script"), null);
+  assert.match(terminal.textContent, /<script>literal<\/script>/);
+  deferLogs = true;
+  await select("archived-app"); await select("web-service");
+  await act(async () => pendingLogs.get("web-service")());
+  await act(async () => pendingLogs.get("archived-app")());
+  assert.match(document.querySelector(".log-terminal").textContent, /web-service/);
+  assert.doesNotMatch(document.querySelector(".log-terminal").textContent, /archived-app/);
+  deferLogs = false;
+  await go("Home");
+});
+
+test("terminal parser consumes controls and extended colors without interpreting their parameters", async () => {
+  const { terminalParts } = await vite.ssrLoadModule("/src/components/log-terminal/ansi.ts");
+  const parts = terminalParts("\x1b[32mgreen\x1b[0m plain\x1b]8;;https://example.test\x07link\x1b]8;;\x07\x1b[38;2;255;0;31m RGB\x1b[2J\x1b[1mbold\x1b[22mnormal");
+  assert.equal(parts.map(part => part.text).join(""), "green plainlink RGBboldnormal");
+  assert.equal(parts[0].color, 2);
+  assert.equal(parts.find(part => part.text === " RGB").color, undefined);
+  assert.equal(parts.find(part => part.text === "bold").bold, true);
+  assert.equal(parts.at(-1).bold, false);
+});
+
+test("manual Home refresh keeps a loading indicator in the process area until the request completes", async () => {
+  deferProcesses = true;
+  const refresh = [...document.querySelectorAll("main button")].find(button => button.textContent.trim() === "Atualizar");
+  await act(async () => refresh.click());
+  assert.match(document.querySelector(".applications [role=status]").textContent, /Carregando aplicações/);
+  assert.equal(document.querySelector(".applications table"), null);
+  await act(async () => streams.at(-1).emit("processes", processes));
+  assert.match(document.querySelector(".applications [role=status]").textContent, /Carregando aplicações/);
+  await act(async () => pendingProcessLoad());
+  deferProcesses = false;
+  assert.equal(document.querySelector(".applications").getAttribute("aria-busy"), "false");
+  assert.ok(!document.querySelector(".dashboard-sync").textContent.includes("Atualização ao vivo"));
+});
+
+test("unstarted applications start their project once and block conflicting actions", async () => {
+  const missing = { ...processes[0], id: "project:missing", name: "missing-app", label: "", projectId: projectRows[0]._id,
+    startProjectId: projectRows[0]._id, status: "not_started", pid: 0, applicationUrl: "https://example.test/app" };
+  await act(async () => streams.at(-1).emit("processes", [...processes, missing]));
+  assert.match(document.querySelector(".applications").textContent, /Não iniciada/);
+  assert.ok(document.querySelector('.applications a[href="https://example.test/app"]'));
+  const start = [...document.querySelectorAll(".applications button")].find(button => button.textContent.trim() === "Iniciar");
+  const before = requests.filter(row => row.url.endsWith("/start")).length;
+  await act(async () => { start.click(); start.click(); });
+  assert.equal(requests.filter(row => row.url.endsWith("/start")).length, before + 1);
+  assert.equal(requests.at(-1).url, `/api/projects/${projectRows[0]._id}/start`);
+  assert.equal(start.disabled, true);
+  await act(async () => pendingLocalStart());
+  assert.doesNotMatch(document.querySelector(".applications").textContent, /missing-app/);
+});
+
+test("Projects starts local files without upload and keeps navigation locked until verification finishes", async () => {
+  await go("Projetos");
+  const start = [...document.querySelectorAll("main button")].find(button => button.textContent.trim() === "Iniciar sem build");
+  assert.ok(start);
+  const uploads = requests.filter(row => row.method === "POST" && row.url.includes("/builds")).length;
+  const starts = requests.filter(row => row.url.endsWith("/start")).length;
+  await act(async () => { start.click(); start.click(); });
+  assert.equal(requests.filter(row => row.url.endsWith("/start")).length, starts + 1);
+  assert.equal(navigation("Home").disabled, true);
+  assert.equal(start.disabled, true);
+  await act(async () => pendingLocalStart());
+  assert.equal(navigation("Home").disabled, false);
+  assert.match(document.querySelector("main").textContent, /Aplicações iniciadas com os arquivos locais/);
+  assert.equal(requests.filter(row => row.method === "POST" && row.url.includes("/builds")).length, uploads);
   await go("Home");
 });
 

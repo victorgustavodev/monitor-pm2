@@ -1,7 +1,7 @@
 import type { ProcessProjectActions } from "./processes";
 import { t } from "../../i18n";
 import { useMemo, useState } from "react";
-import { CircleOff, Search, List, LayoutGrid } from "lucide-react";
+import { CircleOff, Search, List, LayoutGrid, RefreshCw } from "lucide-react";
 import { ProcessTable } from "./ProcessTable";
 import { ProcessCards } from "./ProcessCards";
 import type { Process, ProcessAction, SaveProcessLabel } from "./processes";
@@ -36,7 +36,7 @@ export function Applications({
   query: string;
   onQueryChange: (value: string) => void;
   loading: boolean;
-  busy: number | null;
+  busy: Process["id"] | null;
   onAction: (process: Process, action: ProcessAction) => void;
   onLogs: (process: Process) => void;
   onAdd: () => void;
@@ -122,7 +122,7 @@ export function Applications({
           </p>
         </div>
       )}
-      {layout === "list" ? (
+      {loading ? <div className="applications-empty" role="status"><RefreshCw className="animate-spin" aria-hidden="true" /><p>{t("Carregando aplicações…")}</p></div> : layout === "list" ? (
         <ProcessTable
           onProjectEdit={onProjectEdit}
           onOpenProject={onOpenProject}

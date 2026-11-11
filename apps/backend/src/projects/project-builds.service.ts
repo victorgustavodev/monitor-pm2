@@ -205,7 +205,7 @@ async function deploy(
   try {
     control?.report(60, "Atualizando arquivos do projeto");
     await apply();
-    control?.report(85, "Iniciando aplicação no PM2", false);
+    control?.report(85, "Recriando aplicações no PM2 e verificando a inicialização", false);
     await deployEcosystem(
       await projectPath(project.rootPath, project.pm2ConfigPath),
     );

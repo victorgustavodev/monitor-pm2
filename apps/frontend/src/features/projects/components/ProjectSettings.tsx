@@ -71,6 +71,10 @@ export function ProjectSettings({
           </label>
         </div>
         <label>
+          {t("Link da aplicação")}
+          <input name="applicationUrl" type="url" placeholder="https://app.exemplo.com" defaultValue={project.applicationUrl || ""} maxLength={2048} disabled={locked} />
+        </label>
+        <label>
           {t("Pasta principal na VM")}
           <input
             name="rootPath"

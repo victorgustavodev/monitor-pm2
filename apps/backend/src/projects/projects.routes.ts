@@ -13,6 +13,7 @@ import {
   updateProject,
   deleteProject,
   projectDeletionPreview,
+  startProject,
 } from "./projects.service";
 import { browseProject } from "./project-files";
 import { getEnvironmentFile, saveEnvironmentFile } from "./project-environment";
@@ -109,6 +110,9 @@ projectRoutes.put("/:id", async (request, response) => {
       response.locals.username,
     ),
   );
+});
+projectRoutes.post("/:id/start", async (request, response) => {
+  response.json(await startProject(request.params.id));
 });
 projectRoutes.delete("/:id", async (request, response) => {
   await deleteProject(request.params.id, request.body);

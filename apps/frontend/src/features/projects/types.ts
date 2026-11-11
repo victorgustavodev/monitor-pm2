@@ -4,6 +4,7 @@ export type Project = {
   name: string;
   description: string;
   documentation?: string;
+  applicationUrl?: string;
   rootPath: string;
   pm2ConfigPath: string;
   pm2ConfigContent?: string;

@@ -1,5 +1,7 @@
 export type Process = {
-  id: number;
+  id: number | string;
+  startProjectId?: string;
+  applicationUrl?: string;
   name: string;
   namespace?: string;
   label?: string;
@@ -52,6 +54,7 @@ export function mergeProcessLabels(incoming: Process[], current: Process[]) {
           ...process,
           projectId: previous.projectId,
           projectName: previous.projectName,
+          applicationUrl: previous.applicationUrl,
           projectUpdatedAt: previous.projectUpdatedAt,
           projectObservedAt: previous.projectObservedAt,
         };
@@ -82,5 +85,5 @@ export type ProcessProjectActions = {
 };
 export type ProcessProjectLink = Pick<
   Process,
-  "projectId" | "projectName" | "projectUpdatedAt"
+  "projectId" | "projectName" | "projectUpdatedAt" | "applicationUrl"
 > & { name: string; namespace: string };

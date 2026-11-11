@@ -14,7 +14,7 @@ import type { Process, ProcessAction } from "./processes";
 
 export type ProcessActionProps = {
   process: Process;
-  busy: number | null;
+  busy: Process["id"] | null;
   onAction: (process: Process, action: ProcessAction) => void;
   onLogs: (process: Process) => void;
 };
@@ -27,6 +27,10 @@ export function ProcessActions({
   spread = false,
 }: ProcessActionProps & { spread?: boolean }) {
   const running = process.status === "online";
+  if (process.startProjectId) return <button type="button" className="project-button secondary"
+    disabled={busy !== null} onClick={() => onAction(process, "start")}>
+    <Play size={16} aria-hidden="true" />{t(busy === process.id ? "Iniciando…" : "Iniciar")}
+  </button>;
   return (
     <div
       className={`process-actions ${spread ? "process-actions-spread" : ""}`}
@@ -99,6 +103,7 @@ export function ProcessStatus({
     (
       {
         online: t("Online"),
+        not_started: t("Não iniciada"),
         stopped: t("Parado"),
         errored: t("Erro"),
         launching: t("Iniciando"),

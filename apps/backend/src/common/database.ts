@@ -62,11 +62,19 @@ export interface ProcessProjectRecord {
   updatedBy: string;
 }
 
+export interface ProcessInventoryRecord {
+  scope: string;
+  name: string;
+  namespace: string;
+  projectId: ObjectId;
+}
+
 export interface ProjectRecord {
   name: string;
   nameKey: string;
   description: string;
   documentation?: string;
+  applicationUrl?: string;
   rootPath: string;
   rootKey: string;
   pm2ConfigPath: string;
@@ -114,6 +122,7 @@ export const versions = db.collection<VersionRecord>("versions");
 export const processLabels =
   db.collection<ProcessLabelRecord>("process_labels");
 export const processProjects = db.collection<ProcessProjectRecord>("process_projects");
+export const processInventory = db.collection<ProcessInventoryRecord>("process_inventory");
 export const projects = db.collection<ProjectRecord>("projects");
 export const projectBuilds =
   db.collection<ProjectBuildRecord>("project_builds");
@@ -147,6 +156,7 @@ export async function connectDatabase() {
     ),
     processProjects.createIndex({ scope: 1, name: 1, namespace: 1 }, { unique: true }),
     processProjects.createIndex({ projectId: 1 }),
+    processInventory.createIndex({ scope: 1, name: 1, namespace: 1 }, { unique: true }),
     projects.createIndex({ nameKey: 1 }, { unique: true }),
     projects.createIndex({ rootKey: 1 }, { unique: true }),
     projectBuilds.createIndex({ projectId: 1, nameKey: 1 }, { unique: true }),

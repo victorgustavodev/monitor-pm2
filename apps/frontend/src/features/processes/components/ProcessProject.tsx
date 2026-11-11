@@ -6,9 +6,9 @@ export function ProcessProject({ process, busy, onProjectEdit, onOpenProject }: 
     {process.projectId
       ? <button type="button" disabled={busy} onClick={() => onOpenProject(process.projectId!)}>{process.projectName}</button>
       : <span className="text-muted">{t("Sem projeto")}</span>}
-    <button type="button" disabled={busy} onClick={() => onProjectEdit(process)}
+    {!process.startProjectId && <button type="button" disabled={busy} onClick={() => onProjectEdit(process)}
       aria-label={t("Vincular projeto a {0}", { 0: process.name })}>
       {t(process.projectId ? "Alterar vínculo" : "Vincular projeto")}
-    </button>
+    </button>}
   </div>;
 }

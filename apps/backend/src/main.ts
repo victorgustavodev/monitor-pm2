@@ -193,6 +193,14 @@ app.post(
 app.put("/api/users/:id/role", authenticate, requireAdmin, async (request, response) => {
   response.json(await updateUserRole(request.params.id, request.body?.role, response.locals.username));
 });
+app.get("/api/logs/applications", authenticate, async (_request, response) => {
+  response.json(await logs.aggregate([
+    { $match: { kind: "process", processName: { $type: "string" } } },
+    { $group: { _id: "$processName" } },
+    { $sort: { _id: 1 } },
+    { $project: { _id: 0, name: "$_id" } },
+  ]).toArray());
+});
 app.get("/api/logs", authenticate, async (request, response) => {
   const filter: Filter<LogRecord> = {};
   if (request.query.kind !== undefined) {
@@ -202,6 +210,11 @@ app.get("/api/logs", authenticate, async (request, response) => {
   }
   if (request.query.processId !== undefined)
     filter.processId = parseId(String(request.query.processId));
+  if (request.query.processName !== undefined) {
+    if (typeof request.query.processName !== "string" || !request.query.processName || request.query.processName.length > 256)
+      throw new HttpError(400, "Nome da aplicação inválido.");
+    filter.processName = request.query.processName;
+  }
   const limit = Number(request.query.limit ?? 100);
   if (!Number.isInteger(limit) || limit < 1 || limit > 500)
     throw new HttpError(400, "Limite de logs deve estar entre 1 e 500.");
