@@ -523,8 +523,10 @@ async function go(label) {
   assert.ok(button, label);
   await act(async () => button.click());
   assert.equal(navigation(label).getAttribute("aria-current"), "page");
-  assert.ok(document.querySelector("main h1").classList.contains("sr-only"), "Screen names remain accessible without a visible page title");
-  assert.equal(document.querySelector(".page-eyebrow, .page-description"), null);
+  assert.ok(!document.querySelector("main h1").classList.contains("sr-only"), "Screen titles remain visible");
+  assert.ok(document.querySelector(".dashboard-page-header h1"));
+  assert.ok(document.querySelector(".page-description"));
+  assert.doesNotMatch(document.querySelector("main").textContent, /Atualização ao vivo/);
   const homeGreeting = {
     "pt-BR": "Olá, tester",
     en: "Hello, tester",

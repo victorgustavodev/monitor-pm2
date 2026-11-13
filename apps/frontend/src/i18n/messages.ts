@@ -1,4 +1,5 @@
 export const messages: Record<string, { en: string; es: string }> = {
+  "Atualização automática": { en: "Automatic updates", es: "Actualización automática" },
   "Gerenciar": { en: "Manage", es: "Administrar" },
   "Gerenciar {0}": { en: "Manage {0}", es: "Administrar {0}" },
   "Iniciar automaticamente com o monitor": { en: "Start automatically with the monitor", es: "Iniciar automáticamente con el monitor" },

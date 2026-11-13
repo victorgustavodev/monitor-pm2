@@ -102,7 +102,7 @@ O painel autenticado possui sidebar azul com logo branca e **Home**, **Projetos*
 
 ## Home
 
-Os nomes das telas e a descrição do cabeçalho não aparecem visualmente. Cada tela mantém um `h1` apenas para leitores de tela; na Home ele cumprimenta o usuário conectado. A sidebar identifica a área ativa. Atualização ao vivo, horário de coleta, pausa e ações continuam disponíveis.
+Os títulos das telas e a descrição do cabeçalho permanecem visíveis. Na Home, o `h1` cumprimenta o usuário conectado; nas demais telas mostra o nome da área. Apenas o rótulo “Atualização ao vivo” é omitido; em Configurações, a opção se chama “Atualização automática”. O funcionamento da atualização, horário de coleta, pausa e ações permanece disponível.
 
 `features/processes/components/ProcessLabel.tsx` contém o editor de nome de exibição, reutilizado por lista e cards. A aplicação coordena o salvamento e bloqueia navegação enquanto a operação está pendente. O campo é metadado compartilhado no MongoDB (`process_labels`), identificado por `PM2_HOME`, nome PM2 e namespace; o ID é usado apenas para localizar e conferir a identidade atual. Não executa operações de alteração no daemon PM2.
 

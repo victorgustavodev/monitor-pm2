@@ -392,12 +392,16 @@ export function App() {
         onLogout={logout}
       />
       <main key={view} id="dashboard-main" className="dashboard-content page-enter" tabIndex={-1}>
-        <h1 className="sr-only">
+        <header className="dashboard-page-header">
+          <div>
+            <p className="page-eyebrow">MONITOR PM2</p>
+            <h1>
               {view === "home"
                 ? t("Olá, {0}", { 0: username })
                 : t(currentView.label)}
-        </h1>
-        {["home", "settings"].includes(view) && <header className="dashboard-page-header">
+            </h1>
+            <p className="page-description">{t(currentView.description)}</p>
+          </div>
           <div className="page-actions">
             {["home", "settings"].includes(view) && (
               <button
@@ -426,7 +430,7 @@ export function App() {
               </button>
             )}
           </div>
-        </header>}
+        </header>
         <div className="dashboard-sync" aria-live="off">
           <span
             className={`sync-dot ${connected ? "bg-success" : loading ? "bg-warning" : "bg-danger"}`}

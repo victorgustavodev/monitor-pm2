@@ -61,7 +61,7 @@ export function Settings({
         </div>
         <label className="refresh-preference">
           <div>
-            <strong>{t("Atualização ao vivo")}</strong>
+            <strong>{t("Atualização automática")}</strong>
             <span>
               {t(
                 "Receber mudanças nas métricas e nos processos pela conexão contínua com o servidor.",
