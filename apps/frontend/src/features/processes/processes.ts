@@ -2,6 +2,9 @@ export type Process = {
   id: number | string;
   startProjectId?: string;
   applicationUrl?: string;
+  autoStart?: boolean;
+  autoStartUpdatedAt?: string | null;
+  autoStartError?: string;
   name: string;
   namespace?: string;
   label?: string;
@@ -43,6 +46,8 @@ export function mergeProcessLabels(incoming: Process[], current: Process[]) {
       previous.name === process.name &&
       (previous.namespace || "default") === (process.namespace || "default")
     ) {
+      if ((previous.autoStartUpdatedAt || "") > (process.autoStartUpdatedAt || ""))
+        process = { ...process, autoStart: previous.autoStart, autoStartUpdatedAt: previous.autoStartUpdatedAt, autoStartError: previous.autoStartError };
       if ((previous.labelUpdatedAt || "") > (process.labelUpdatedAt || ""))
         process = {
           ...process,
@@ -83,7 +88,17 @@ export type ProcessProjectActions = {
   onProjectEdit: (process: Process) => void;
   onOpenProject: (id: string) => void;
 };
+
+export type ProcessSettings = {
+  name: string;
+  namespace: string;
+  autoStart: boolean;
+  autoStartUpdatedAt: string | null;
+  autoStartError: string;
+  canAutoStart: boolean;
+  projectId: string | null;
+};
 export type ProcessProjectLink = Pick<
   Process,
-  "projectId" | "projectName" | "projectUpdatedAt" | "applicationUrl"
+  "projectId" | "projectName" | "projectUpdatedAt" | "applicationUrl" | "autoStart" | "autoStartUpdatedAt" | "autoStartError"
 > & { name: string; namespace: string };

@@ -93,6 +93,8 @@ Favicon e `theme-color` são artefatos independentes do CSS. Uma mudança de mar
 
 ## Submenu de configurações
 
+Os títulos globais das telas, a marca textual e as descrições do cabeçalho não são exibidos acima do conteúdo. O `h1` permanece com `sr-only` para acessibilidade, com nomes e indicação ativa na sidebar. Os controles de atualização ao vivo e ações continuam visíveis. O botão textual **Gerenciar** usa tokens existentes; o grupo de ações permite quebra de linha nos cards e mantém a rolagem horizontal da tabela. Seu modal reutiliza as superfícies, foco e backdrop dos demais diálogos.
+
 Configurações é um botão de expansão com `aria-expanded` e `aria-controls`. Geral, Logs e Usuários aparecem em uma lista abaixo dele; o destino ativo usa `aria-current="page"`. No celular a navegação principal continua horizontal e o grupo se expande verticalmente, dentro do fluxo, sem sobrepor o conteúdo. Usuários só aparece para administradores. Os links herdam tokens e foco da sidebar existente.
 
 ## Transições de navegação

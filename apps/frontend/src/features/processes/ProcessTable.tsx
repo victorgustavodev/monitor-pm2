@@ -16,6 +16,7 @@ export function ProcessTable({
   busy,
   onAction,
   onLogs,
+  onManage,
   onLabelSave,
   onProjectEdit,
   onOpenProject,
@@ -24,6 +25,7 @@ export function ProcessTable({
   busy: Process["id"] | null;
   onAction: (process: Process, action: ProcessAction) => void;
   onLogs: (process: Process) => void;
+  onManage: (process: Process) => void;
   onLabelSave: SaveProcessLabel;
 } & ProcessProjectActions) {
   return (
@@ -73,6 +75,7 @@ export function ProcessTable({
                   busy={busy}
                   onAction={onAction}
                   onLogs={onLogs}
+                  onManage={onManage}
                 />
               </td>
             </tr>

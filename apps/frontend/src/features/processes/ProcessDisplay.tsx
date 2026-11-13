@@ -9,6 +9,7 @@ import {
   CircleCheck,
   CircleOff,
   CircleAlert,
+  Settings2,
 } from "lucide-react";
 import type { Process, ProcessAction } from "./processes";
 
@@ -17,6 +18,7 @@ export type ProcessActionProps = {
   busy: Process["id"] | null;
   onAction: (process: Process, action: ProcessAction) => void;
   onLogs: (process: Process) => void;
+  onManage: (process: Process) => void;
 };
 
 export function ProcessActions({
@@ -24,18 +26,24 @@ export function ProcessActions({
   busy,
   onAction,
   onLogs,
+  onManage,
   spread = false,
 }: ProcessActionProps & { spread?: boolean }) {
   const running = process.status === "online";
-  if (process.startProjectId) return <button type="button" className="project-button secondary"
+  const manage = <button type="button" className="process-manage" disabled={busy !== null}
+    aria-label={t("Gerenciar {0}", { 0: process.name })} onClick={() => onManage(process)}>
+    <Settings2 size={16} aria-hidden="true" />{t("Gerenciar")}
+  </button>;
+  if (process.startProjectId) return <div className="process-actions">{manage}<button type="button" className="project-button secondary"
     disabled={busy !== null} onClick={() => onAction(process, "start")}>
     <Play size={16} aria-hidden="true" />{t(busy === process.id ? "Iniciando…" : "Iniciar")}
-  </button>;
+  </button></div>;
   return (
     <div
       className={`process-actions ${spread ? "process-actions-spread" : ""}`}
       aria-label={t("Ações de {0}", { 0: process.name })}
     >
+      {manage}
       <button
         type="button"
         title={t("Logs")}

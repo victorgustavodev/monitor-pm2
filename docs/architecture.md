@@ -102,7 +102,7 @@ O painel autenticado possui sidebar azul com logo branca e **Home**, **Projetos*
 
 ## Home
 
-O título da Home cumprimenta o usuário conectado com “Olá, nome”, respeitando o idioma da interface.
+Os nomes das telas e a descrição do cabeçalho não aparecem visualmente. Cada tela mantém um `h1` apenas para leitores de tela; na Home ele cumprimenta o usuário conectado. A sidebar identifica a área ativa. Atualização ao vivo, horário de coleta, pausa e ações continuam disponíveis.
 
 `features/processes/components/ProcessLabel.tsx` contém o editor de nome de exibição, reutilizado por lista e cards. A aplicação coordena o salvamento e bloqueia navegação enquanto a operação está pendente. O campo é metadado compartilhado no MongoDB (`process_labels`), identificado por `PM2_HOME`, nome PM2 e namespace; o ID é usado apenas para localizar e conferir a identidade atual. Não executa operações de alteração no daemon PM2.
 
@@ -119,7 +119,7 @@ O título da Home cumprimenta o usuário conectado com “Olá, nome”, respeit
 
 Arquivos são lidos pela API a partir da pasta do projeto na VM. Publicação, validação de caminhos e execução PM2 pertencem ao backend. Cadastros e envios bloqueiam a navegação até o salvamento ou aceite do pacote. Após o aceite HTTP 202, publicações continuam em segundo plano e a navegação fica disponível. O projeto em publicação permanece bloqueado para alterações e novos builds de qualquer usuário; outros projetos podem publicar simultaneamente. Consulte [Projetos](projects.md) para modelo de dados e contratos.
 
-`ProjectDocumentation` compõe a aba Sobre o projeto, com edição e prévia segura de documentação (`documentation`) persistida no MongoDB. `ProjectEnvironment` compõe Variáveis de ambiente, consulta o ecosystem local e habilita `Pm2ConfigurationField` somente se o arquivo estiver ausente. `ProjectEnvironmentFiles` edita arquivos `.env` e variantes da raiz pela API autenticada, com revisão de conteúdo e bloqueio de navegação durante o salvamento. `ProjectSettings` mantém configurações gerais e exclusão em uma aba separada, acessível por Editar projeto.
+`ProjectDocumentation` compõe a aba Sobre o projeto, com edição e prévia segura de documentação (`documentation`) persistida no MongoDB. `ProjectEnvironment` compõe Variáveis de ambiente, consulta o ecosystem local e habilita `Pm2ConfigurationField` somente se o arquivo estiver ausente. Quando presente, usa `ProjectEnvironmentFiles` para editar o ecosystem local. Esse editor também edita `.env` e variantes da raiz pela API autenticada, com revisão de conteúdo e bloqueio de navegação durante o salvamento. `ProjectSettings` mantém configurações gerais e exclusão em uma aba separada, acessível por Editar projeto.
 
 O backend preserva o ecosystem existente no destino, inclusive em republicações, e o exclui da substituição e remoção de arquivos da tentativa. Somente na ausência do ecosystem local e do arquivo no build materializa uma cópia de `pm2ConfigContent`, validado sem execução ao salvar. A edição de `.env` em `src/projects/project-environment.ts` compartilha o bloqueio de operações do projeto; não reinicia processos.
 
@@ -154,9 +154,17 @@ O backend reserva o projeto ao criar a operação, antes do upload, e mantém o 
 
 A Home mostra o horário de atualização em vermelho e um controle compacto Pausar/Retomar, sem o texto “Atualização ao vivo”. O evento SSE `live` continua sinalizando coletas bem-sucedidas. A pausa de métricas não desativa a assinatura de publicações nem seus bloqueios. Carregamento inicial e atualização manual mostram loading na área das aplicações; as coletas automáticas preservam a lista e o foco.
 
+`ProcessSettingsDialog` abre pelo botão **Gerenciar** da Lista ou dos Cards. A opção **Iniciar automaticamente com o monitor** é salva por PM2_HOME, nome e namespace em `process_startup`, associada ao projeto. O modal consulta a configuração atual, preserva o rascunho em falhas e bloqueia duplo envio e navegação ao salvar. O processo precisa ter um projeto e uma identidade já observada; placeholders de projetos ainda não iniciados orientam iniciar uma vez. O ecosystem local é validado em um worker sem alterar o PM2 durante o salvamento.
+
+Após recuperar publicações interrompidas e antes de aceitar requisições, o monitor inicia uma vez as identidades habilitadas pelo ecosystem atual do projeto. O worker seleciona nome e namespace, não inicia outras aplicações do arquivo e preserva instâncias online. Falhas ficam disponíveis no modal e nos logs do monitor, sem impedir tentativas dos demais processos. Publicação ou recuperação pendente impede o início daquele projeto. Não é um watchdog: parar um processo não provoca reinício contínuo; ele volta apenas na próxima inicialização do monitor se a opção continuar habilitada. Excluir manualmente o processo, trocar seu projeto/pasta ou excluir o projeto desabilita/remove a preferência. O restart automático após queda continua sob controle de `autorestart` no ecosystem.
+
+A inicialização após reboot da VM depende do monitor iniciar com o Windows. O script existente `scripts/install-scheduled-task.ps1` instala essa tarefa na mesma conta do PM2; marcar a opção no modal não instala tarefas nem modifica credenciais do Windows.
+
 O nome de exibição ocupa a posição principal na Lista e nos Cards; quando preenchido, o nome técnico aparece abaixo. O link HTTP(S) opcional pertence ao projeto e aparece também nas aplicações vinculadas.
 
-Logs começa com a seleção de uma aplicação, incluindo nomes com histórico salvo. A auditoria permanece como opção de tipo. `components/log-terminal/LogTerminal.tsx` é compartilhado entre essa tela e o modal da Home: converte cores ANSI em spans de texto, remove comandos de terminal e nunca interpreta HTML.
+Logs começa com a seleção de uma aplicação, incluindo nomes com histórico salvo. A auditoria permanece como opção de tipo. `ProcessLogTerminal`, exposto pela API pública da feature processes, mantém o SSE dos logs na tela e no modal da Home. `components/log-terminal/LogTerminal.tsx` converte cores ANSI em spans de texto, remove comandos de terminal e nunca interpreta HTML. O terminal acompanha novas saídas automaticamente enquanto a leitura está no fim; ao subir, mantém a posição e oferece um atalho para o fim. A exibição pode ser pausada independentemente das métricas.
+
+Publicações de projetos passam a pasta de destino ao worker PM2. Antes de remover processos, o worker recusa `script` ou `cwd` fora dessa pasta, evitando anunciar sucesso ao executar uma versão antiga em outro diretório. O diagnóstico orienta a correção do ecosystem local na aba Variáveis de ambiente. A aplicação dos arquivos continua com backup e recuperação em falhas; caminhos válidos mantêm delete/criação de processo novo e verificação de inicialização.
 
 `pm2/process-inventory.ts` registra identidades observadas de aplicações vinculadas a projetos, isoladas por PM2_HOME. A consulta e o SSE de processos também incluem entradas `not_started` para identidades ausentes e projetos ainda sem processos conhecidos. Essas entradas iniciam o projeto pelo ecosystem local; não recebem comandos destinados a IDs do daemon.
 

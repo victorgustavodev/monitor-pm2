@@ -17,6 +17,7 @@ export function ProcessCards({
   busy,
   onAction,
   onLogs,
+  onManage,
   onAdd,
   onLabelSave,
   onProjectEdit,
@@ -26,6 +27,7 @@ export function ProcessCards({
   busy: Process["id"] | null;
   onAction: (process: Process, action: ProcessAction) => void;
   onLogs: (process: Process) => void;
+  onManage: (process: Process) => void;
   onAdd: () => void;
   onLabelSave: SaveProcessLabel;
 } & ProcessProjectActions) {
@@ -84,6 +86,7 @@ export function ProcessCards({
             busy={busy}
             onAction={onAction}
             onLogs={onLogs}
+            onManage={onManage}
             spread
           />
         </article>

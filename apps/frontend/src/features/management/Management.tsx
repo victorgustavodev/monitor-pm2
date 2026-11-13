@@ -2,7 +2,7 @@ import { dateLocale } from "../../i18n";
 import { t } from "../../i18n";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../services/api";
-import { LogTerminal } from "../../components/log-terminal/LogTerminal";
+import { ProcessLogTerminal } from "../processes";
 import type { Process } from "../processes/processes";
 
 export type ManagementPanel = "users" | "logs";
@@ -90,9 +90,8 @@ export function Management({
     try {
       if (panel === "users") setUsers(await api<User[]>("/api/users"));
       if (panel === "logs") {
-        if (kind === "process" && !processName) return;
+        if (kind === "process") return;
         const query = new URLSearchParams({ kind, limit: "100" });
-        if (kind === "process") query.set("processName", processName);
         const rows = await api<Log[]>(`/api/logs?${query}`);
         if (id === requestId.current) setLogs(rows);
       }
@@ -164,16 +163,16 @@ export function Management({
           <h2 className="font-semibold">
             {panel === "users"
                 ? t("Usuários do painel")
-                : t("Logs salvos")}
+                : t("Logs")}
           </h2>
-          <button
+          {(panel === "users" || kind === "audit") && <button
             type="button"
             onClick={load}
             disabled={loading || busy}
             className="text-sm text-link hover:text-link-hover disabled:opacity-50"
           >
             {loading ? t("Carregando…") : t("Atualizar")}
-          </button>
+          </button>}
         </div>
         {error && (
           <p
@@ -297,11 +296,8 @@ export function Management({
                 </label>
               )}
             </div>
-            {kind === "process" && !processName ? <p role="status" className="py-6 text-center text-sm text-muted">{t("Selecione uma aplicação para exibir os logs.")}</p> : <p className="mb-3 text-xs text-muted">
-              {t(
-                "Últimos 100 registros. A saída dos processos é coletada a cada 5 segundos.",
-              )}
-            </p>}
+            {kind === "process" && (!processName ? <p role="status" className="py-6 text-center text-sm text-muted">{t("Selecione uma aplicação para exibir os logs.")}</p>
+              : <ProcessLogTerminal key={processName} name={processName} onSessionExpired={onSessionExpired} />)}
             {loading && <p role="status">{t("Carregando…")}</p>}
             <div className="max-h-[500px] space-y-3 overflow-auto">
               {logs.map((log) => (
@@ -311,28 +307,17 @@ export function Management({
                 >
                   <div className="flex flex-wrap justify-between gap-2">
                     <strong>
-                      {log.kind === "audit"
-                        ? `${log.username || t("Sem sessão")} · ${log.method} ${log.path} · HTTP ${log.status}`
-                        : `${log.processName} · processo ${log.processId}`}
+                      {`${log.username || t("Sem sessão")} · ${log.method} ${log.path} · HTTP ${log.status}`}
                     </strong>
                     <time className="text-xs text-muted">
                       {date(log.createdAt)}
                     </time>
                   </div>
-                  {log.kind === "audit" ? (
-                    <p className="mt-1 text-xs text-muted">IP: {log.ip}</p>
-                  ) : (
-                    <>
-                      <p className="mt-1 break-all text-xs text-muted">
-                        {log.source}
-                      </p>
-                      <LogTerminal content={log.content || ""} label={t("Logs de {0}", { 0: log.processName })} />
-                    </>
-                  )}
+                  <p className="mt-1 text-xs text-muted">IP: {log.ip}</p>
                 </article>
               ))}
             </div>
-            {!loading && !logs.length && (kind !== "process" || processName) && (
+            {!loading && !logs.length && kind !== "process" && (
               <p className="py-6 text-center text-sm text-muted">
                 {t("Nenhum log salvo para este filtro.")}
               </p>

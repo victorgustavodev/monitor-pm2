@@ -208,6 +208,7 @@ async function deploy(
     control?.report(85, "Recriando aplicações no PM2 e verificando a inicialização", false);
     await deployEcosystem(
       await projectPath(project.rootPath, project.pm2ConfigPath),
+      project.rootPath,
     );
     control?.report(95, "Finalizando publicação", false);
     await writeFile(resolve(folder, "manifest.json"), JSON.stringify(files));

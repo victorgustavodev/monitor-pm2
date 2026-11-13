@@ -1129,6 +1129,18 @@ test("environment files support authenticated editing, detect conflicts and reje
   const before = deployments.length;
   await json(await request(base + ".env.empty", { method: "PUT", body: JSON.stringify({ content: "", revision: null }) }));
   assert.equal(deployments.length, before, "Saving env files does not execute PM2");
+  const ecosystem = "module.exports={apps:[{name:'KWMS BLUE',script:'./main.js'}]};\n";
+  const configUrl = base + "ecosystem.config.js";
+  const created = await json(await request(configUrl, { method: "PUT", body: JSON.stringify({ content: ecosystem, revision: null }) }));
+  assert.equal(await readFile(resolve(entry.rootPath, "ecosystem.config.js"), "utf8"), ecosystem);
+  assert.equal((await json(await request(configUrl))).revision, created.revision);
+  for (const invalid of ["module.exports = {", "x".repeat(16385)])
+    assert.equal((await request(configUrl, { method: "PUT", body: JSON.stringify({ content: invalid, revision: created.revision }) })).status, 400);
+  assert.equal((await request(configUrl, { method: "PUT", body: JSON.stringify({ content: ecosystem, revision: null }) })).status, 409);
+  await withProjectOperation(new ObjectId(entry._id), async () => {
+    assert.equal((await request(configUrl, { method: "PUT", body: JSON.stringify({ content: ecosystem, revision: created.revision }) })).status, 409);
+  });
+  assert.equal(deployments.length, before, "Editing the ecosystem must not execute PM2");
 });
 
 test("deletion previews identify processes by folder and keeping them leaves PM2 untouched", async () => {

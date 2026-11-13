@@ -5,11 +5,13 @@ import { withArtifactAccess } from "../common/artifact-access";
 import { getProject } from "./projects.service";
 import { projectPath, relativeProjectPath } from "./project-paths";
 import { withProjectOperation } from "./project-operations";
+import { pm2Configuration } from "./pm2-configuration";
 
 const maxBytes = 32 * 1024;
 const environmentName = /^\.env(?:\.[a-zA-Z0-9_-][a-zA-Z0-9._-]*)?$/;
-function fileName(raw: unknown) {
+function fileName(raw: unknown, configPath: string) {
   const name = relativeProjectPath(raw);
+  if (name === configPath) return name;
   if (!environmentName.test(name) || name.length > 128)
     throw new HttpError(400, "Use .env ou um nome como .env.production, na raiz do projeto.");
   return name;
@@ -40,7 +42,7 @@ async function readEnvironment(root: string, name: string) {
 
 export async function getEnvironmentFile(rawProject: unknown, rawName: unknown) {
   const project = await getProject(rawProject);
-  const name = fileName(rawName);
+  const name = fileName(rawName, project.pm2ConfigPath);
   const file = await readEnvironment(project.rootPath, name);
   const entries = await readdir(await projectPath(project.rootPath, ""), { withFileTypes: true });
   const names = entries.filter(entry => entry.isFile() && environmentName.test(entry.name))
@@ -49,7 +51,6 @@ export async function getEnvironmentFile(rawProject: unknown, rawName: unknown) 
 }
 
 export async function saveEnvironmentFile(rawProject: unknown, rawName: unknown, body: Record<string, unknown> | undefined) {
-  const name = fileName(rawName);
   if (typeof body?.content !== "string" || Buffer.byteLength(body.content, "utf8") > maxBytes || body.content.includes("\0"))
     throw new HttpError(400, "O arquivo de ambiente deve ser um texto de até 32 KB.");
   if (body.revision !== null && (typeof body.revision !== "string" || !/^[a-f0-9]{64}$/.test(body.revision)))
@@ -59,6 +60,8 @@ export async function saveEnvironmentFile(rawProject: unknown, rawName: unknown,
     const project = await getProject(rawProject);
     return withProjectOperation(project._id, async () => {
       const current = await getProject(rawProject);
+      const name = fileName(rawName, current.pm2ConfigPath);
+      if (name === current.pm2ConfigPath) pm2Configuration(content);
       if (current.deployment)
         throw new HttpError(409, "Aguarde a conclusão ou recuperação da publicação antes de salvar.");
       const file = await readEnvironment(current.rootPath, name);

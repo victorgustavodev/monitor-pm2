@@ -74,6 +74,8 @@ Veja `api-integration.md` para erros e contratos HTTP e `components.md` para sep
 
 ## Estado do vínculo de projeto
 
+O modal Gerenciar mantém o rascunho de início automático localmente enquanto está aberto; atualizações SSE não o sobrescrevem. Após salvar, `App` atualiza todas as instâncias de mesmo nome/namespace, inclusive com métricas pausadas. `autoStartUpdatedAt` evita regressão por snapshots anteriores. A preferência de início automático fica no MongoDB, não em `localStorage`, e é executada uma vez pelo backend em cada inicialização do monitor.
+
 A associação chega na mesma lista e no mesmo SSE que as métricas, sem polling adicional. O editor mantém seleção local e consulta o catálogo ao abrir. Após salvar, a resposta atualiza todas as instâncias da mesma identidade, inclusive com atualização ao vivo pausada. `mergeProcessLabels` também preserva vínculos contra snapshots anteriores à gravação; compara `projectUpdatedAt` e `projectObservedAt`. Uma coleta mais recente pode remover associações após exclusão de projeto ou mudança de pasta, mesmo sem um metadado explícito para aquele processo. A identificação inclui nome e namespace para não reaproveitar dados de outro processo com o mesmo ID.
 
 ## Publicações globais

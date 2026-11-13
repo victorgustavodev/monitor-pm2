@@ -86,6 +86,9 @@ export function BuildForm({
           {t(". Inclua as dependências necessárias no pacote.")}
         </p>
         <p className="project-form-note">
+          {t("Compacte os arquivos de dentro da pasta de build. No ecosystem local, script e cwd devem apontar para a pasta publicada acima.")}
+        </p>
+        <p className="project-form-note">
           {t("A recriação interrompe a aplicação por alguns instantes. O ecosystem já existente na pasta da VM é preservado e tem prioridade sobre o arquivo do pacote.")}
         </p>
         <p className="project-form-note">

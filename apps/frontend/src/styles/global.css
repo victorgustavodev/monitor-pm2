@@ -728,10 +728,23 @@ input::placeholder {
 }
 .process-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
 }
+.process-manage {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid var(--ds-color-line);
+  border-radius: 7px;
+  color: var(--ds-color-link);
+  font-size: 12px;
+}
+.process-manage:hover { background: var(--ds-color-hover); }
 .process-actions-spread {
   justify-content: space-between;
   margin-top: auto;

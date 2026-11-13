@@ -43,7 +43,9 @@ import {
   recoverProjectBuilds,
 } from "./projects/project-builds.service";
 import { startLogCollector } from "./logs/logs.service";
+import { createLogStream } from "./logs/log-stream";
 import { createProcessStream } from "./pm2/process-stream";
+import { getProcessSettings, saveProcessSettings, startConfiguredProcesses } from "./pm2/process-startup";
 import {
   listProcesses,
   setProcessLabel,
@@ -57,6 +59,13 @@ import {
 
 export const app = express();
 const processStream = createProcessStream(listProcesses);
+const logStream = createLogStream(async selection => {
+  const filter: Filter<LogRecord> = { kind: "process", processName: selection.processName };
+  if (selection.namespace === "default") filter.$or = [{ namespace: "default" }, { namespace: { $exists: false } }];
+  else if (selection.namespace !== undefined) filter.namespace = selection.namespace;
+  const rows = await logs.find(filter).sort({ createdAt: -1, _id: -1 }).limit(100).toArray();
+  return rows.reverse().map(row => ({ ...row, _id: row._id.toHexString() }));
+});
 const pendingAudit = new Set<Promise<unknown>>();
 export async function flushAudit() {
   await Promise.allSettled([...pendingAudit]);
@@ -94,6 +103,7 @@ app.use("/api", (request, response, next) => {
         "/processes",
         "/processes/stream",
         "/logs",
+        "/logs/stream",
         "/versions",
         "/users",
       ].includes(path) &&
@@ -226,6 +236,14 @@ app.get("/api/logs", authenticate, async (request, response) => {
       .toArray(),
   );
 });
+app.get("/api/logs/stream", authenticate, async (request, response) => {
+  const { processName, namespace } = request.query;
+  if (typeof processName !== "string" || !processName || processName.length > 256 ||
+    (namespace !== undefined && (typeof namespace !== "string" || !namespace || namespace.length > 256)))
+    throw new HttpError(400, "Nome da aplicação inválido.");
+  await logStream.subscribe(response, { processName, namespace }, response.locals.sessionExpiresAt,
+    async () => Boolean(await users.findOne({ username: response.locals.username }, { projection: { _id: 1 } })));
+});
 app.get("/api/versions", authenticate, async (_request, response) => {
   response.json(
     await versions.find({}).sort({ createdAt: -1 }).limit(200).toArray(),
@@ -270,6 +288,12 @@ app.post("/api/versions/:id/start", authenticate, async (request, response) => {
 app.get("/api/processes", authenticate, async (_request, response) =>
   response.json(await listProcesses()),
 );
+app.get("/api/processes/:id/settings", authenticate, async (request, response) => {
+  response.json(await getProcessSettings(request.params.id, request.query));
+});
+app.put("/api/processes/:id/settings", authenticate, async (request, response) => {
+  response.json(await saveProcessSettings(request.params.id, request.body, response.locals.username));
+});
 app.put("/api/processes/:id/project", authenticate, async (request, response) => {
   response.json(await withManualProcessAction(() => setProcessProject(parseId(request.params.id), request.body, response.locals.username)));
 });
@@ -392,6 +416,7 @@ export async function initialize() {
 
 async function start() {
   await initialize();
+  await startConfiguredProcesses();
   const server = app.listen(env.port, env.host, () => {
     console.log(`ati-dev-cockpit disponível em http://${env.host}:${env.port}`);
   });
@@ -399,11 +424,12 @@ async function start() {
     console.error(error);
     process.exit(1);
   });
-  const stopCollector = startLogCollector();
+  const stopCollector = startLogCollector(logStream.publish, logStream.status);
   const stopRetention = startRetentionScheduler();
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
       processStream.close();
+      logStream.close();
       closeBuildProgressStreams();
       server.close(async () => {
         await stopCollector();

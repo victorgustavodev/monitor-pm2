@@ -29,6 +29,7 @@ function finishPublication(id, status, logs = []) {
     percent: status === "succeeded" ? 100 : row.percent, stage: status === "succeeded" ? "Build publicado" : status === "cancelled" ? "Publicação cancelada" : "Falha ao publicar o build", logs } : row));
 }
 let pendingSettings;
+let pendingProcessSettings, processSettingsFail = false, processSettingsReadFail = false, canAutoStart = true;
 let pendingProjectUpdate, pendingProjectDelete;
 let localEcosystem = null, ecosystemReadError = 0;
 let pendingEnvironmentSave, environmentConflict = false;
@@ -56,6 +57,7 @@ const projectRows = [
 const buildRows = [];
 const requests = [];
 const streams = [];
+const logStreams = [];
 const buildStreams = [];
 const intervals = [];
 const processes = [
@@ -115,6 +117,14 @@ before(
       constructor(url) {
         super();
         if (url === "/api/build-operations/stream") { publicationStreams.push(this); queueMicrotask(() => this.emit("publications", publicationRows)); }
+        else if (url.startsWith("/api/logs/stream?")) {
+          logStreams.push(this);
+          this.url = url;
+          const name = new URL(url, "http://localhost").searchParams.get("processName");
+          const emit = () => this.emit("snapshot", { content: `Log de teste\n\x1b[32m[Nest] ${name}\x1b[0m <script>literal</script>\n` });
+          if (deferLogs) pendingLogs.set(name, emit);
+          else queueMicrotask(emit);
+        }
         else if (url.includes("/build-operations/")) buildStreams.push(this);
         else { assert.equal(url, "/api/processes/stream"); streams.push(this); }
       }
@@ -175,6 +185,20 @@ before(
         return failProcesses
           ? json({ message: "PM2 indisponível." }, 502)
           : json(processes);
+      if (String(url).startsWith("/api/processes/1/settings")) {
+        if (options.method === "PUT") return new Promise(done => {
+          pendingProcessSettings = () => {
+            if (processSettingsFail) return done(json({ message: "Falha ao salvar configuração." }, 409));
+            const data = JSON.parse(options.body);
+            Object.assign(processes[0], { autoStart: data.autoStart, autoStartUpdatedAt: new Date().toISOString(), autoStartError: "" });
+            done(json({ name: processes[0].name, namespace: "default", canAutoStart, projectId: projectRows[0]._id,
+              autoStart: processes[0].autoStart, autoStartUpdatedAt: processes[0].autoStartUpdatedAt, autoStartError: "" }));
+          };
+        });
+        if (processSettingsReadFail) return json({ message: "Falha ao carregar configuração." }, 502);
+        return json({ name: processes[0].name, namespace: "default", canAutoStart, projectId: canAutoStart ? projectRows[0]._id : null,
+          autoStart: processes[0].autoStart || false, autoStartUpdatedAt: processes[0].autoStartUpdatedAt || null, autoStartError: "" });
+      }
       if (url === "/api/processes/1/project" && options.method === "PUT")
         return new Promise(done => {
           pendingLink = () => {
@@ -499,6 +523,8 @@ async function go(label) {
   assert.ok(button, label);
   await act(async () => button.click());
   assert.equal(navigation(label).getAttribute("aria-current"), "page");
+  assert.ok(document.querySelector("main h1").classList.contains("sr-only"), "Screen names remain accessible without a visible page title");
+  assert.equal(document.querySelector(".page-eyebrow, .page-description"), null);
   const homeGreeting = {
     "pt-BR": "Olá, tester",
     en: "Hello, tester",
@@ -884,6 +910,55 @@ test("link dialog handles loading and save failures and lets the user retry", as
   assert.equal(dialog(), null);
 });
 
+test("Manage saves startup preferences once, preserves drafts on failure and is available in list and cards", async () => {
+  await go("Home");
+  const manage = () => document.querySelector('[aria-label="Gerenciar api-service"]');
+  const dialog = () => document.querySelector('dialog[aria-labelledby="process-settings-title"]');
+  const button = label => [...dialog().querySelectorAll("button")].find(node => node.textContent.trim() === label);
+  for (const layout of ["Lista", "Cards"]) {
+    await act(async () => [...document.querySelectorAll('.application-layout-selector button')].find(node => node.textContent === layout).click());
+    assert.ok(manage());
+  }
+  processSettingsReadFail = true;
+  await act(async () => manage().click());
+  assert.match(dialog().textContent, /Falha ao carregar/);
+  processSettingsReadFail = false;
+  await act(async () => button("Tentar novamente").click());
+  assert.equal(dialog().querySelector('input[type="checkbox"]').checked, false);
+  await act(async () => dialog().querySelector('input[type="checkbox"]').click());
+  const count = requests.filter(row => row.method === "PUT" && row.url.endsWith("/settings")).length;
+  await act(async () => { button("Salvar").click(); button("Salvar").click(); });
+  assert.equal(requests.filter(row => row.method === "PUT" && row.url.endsWith("/settings")).length, count + 1);
+  assert.equal(navigation("Projetos").disabled, true);
+  assert.equal(button("Cancelar").disabled, true);
+  assert.equal(manage().disabled, true);
+  assert.deepEqual(JSON.parse(requests.at(-1).body), { name: "api-service", namespace: "default", autoStart: true });
+  await act(async () => pendingProcessSettings());
+  assert.equal(dialog(), null);
+  assert.equal(navigation("Projetos").disabled, false);
+  await act(async () => manage().click());
+  assert.equal(dialog().querySelector('input[type="checkbox"]').checked, true);
+  await act(async () => dialog().querySelector('input[type="checkbox"]').click());
+  processSettingsFail = true;
+  await act(async () => button("Salvar").click());
+  await act(async () => pendingProcessSettings());
+  assert.equal(dialog().querySelector('input[type="checkbox"]').checked, false, "Keep the unsaved choice after a failure");
+  assert.match(dialog().textContent, /Falha ao salvar/);
+  processSettingsFail = false;
+  await act(async () => button("Salvar").click());
+  await act(async () => pendingProcessSettings());
+  canAutoStart = false;
+  await act(async () => manage().click());
+  assert.equal(dialog().querySelector('input[type="checkbox"]').disabled, true);
+  assert.match(dialog().textContent, /Vincule o processo a um projeto/);
+  await act(async () => button("Cancelar").click());
+  canAutoStart = true;
+  const { mergeProcessLabels } = await vite.ssrLoadModule("/src/features/processes/processes.ts");
+  const saved = { ...processes[0], autoStart: true, autoStartUpdatedAt: "2026-11-13T18:00:00.000Z" };
+  const stale = { ...saved, autoStart: false, autoStartUpdatedAt: "2026-11-13T17:00:00.000Z" };
+  assert.equal(mergeProcessLabels([stale], [saved])[0].autoStart, true);
+});
+
 test("navigation stays disabled while a user creation is pending and returns afterward", async () => {
   await go("Usuários");
   document.querySelector('input[name="username"]').value = "operador";
@@ -1025,7 +1100,7 @@ test("projects browse local files and keep build publication and history inside 
   await go("Home");
 });
 
-test("project documentation is saved independently and ecosystem configuration is editable only when absent", async () => {
+test("project documentation, saved configuration, local ecosystem and env files are editable independently", async () => {
   await go("Projetos");
   const button = label => [...document.querySelectorAll("main button")].find(node => node.textContent.trim() === label);
   await act(async () => document.querySelector("#project-tab-about").click());
@@ -1095,9 +1170,23 @@ test("project documentation is saved independently and ecosystem configuration i
   await act(async () => pendingEnvironmentSave());
   assert.equal(environmentFiles.get(".env.production").content, "MODE=production\n");
   localEcosystem = 'module.exports = { apps: [{ env: { PORT: 9000 } }] };';
+  environmentFiles.set("ecosystem.config.js", { name: "ecosystem.config.js", content: localEcosystem, revision: "b".repeat(64) });
   await act(async () => button("Atualizar").click());
   assert.equal(document.querySelector('[name="pm2ConfigContent"]'), null);
-  assert.match(document.querySelector(".repository-preview").textContent, /PORT: 9000/);
+  const ecosystemEditor = document.querySelector('[name="ecosystemContent"]');
+  assert.match(ecosystemEditor.value, /PORT: 9000/);
+  const corrected = "module.exports={apps:[{name:'KWMS BLUE',script:'./main.js',cwd:'C:/inetpub/wwwroot/KWMS_BLUE'}]};";
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value").set.call(ecosystemEditor, corrected);
+    ecosystemEditor.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  await act(async () => ecosystemEditor.form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  assert.equal(navigation("Home").disabled, true);
+  assert.equal(envContent().disabled, true);
+  assert.equal(JSON.parse(requests.at(-1).body).revision, "b".repeat(64));
+  await act(async () => pendingEnvironmentSave());
+  assert.equal(environmentFiles.get("ecosystem.config.js").content, corrected);
+  assert.equal(navigation("Home").disabled, false);
   ecosystemReadError = 500;
   await act(async () => button("Atualizar").click());
   assert.equal(document.querySelector('[name="pm2ConfigContent"]'), null);
@@ -1211,9 +1300,15 @@ test("Home live indicator reflects successful collections, pause and reconnectio
   await act(async () => streams.at(-1).emit("processes", processes));
 });
 
-test("Home list and cards show plain port numbers without access links", async () => {
-  for (const view of ["Home", "Home"]) {
-    await go(view);
+test("Home list and cards show the application URL separately from plain port numbers", async () => {
+  await go("Home");
+  const previous = processes.map(row => ({ ...row }));
+  // Earlier stale-snapshot tests deliberately advance the observation by 10 seconds.
+  processes.forEach(row => { row.applicationUrl = "https://example.test/app"; row.projectObservedAt = new Date(Date.now() + 20000).toISOString(); });
+  const refresh = () => [...document.querySelectorAll("main button")].find(button => button.textContent.trim() === "Atualizar");
+  await act(async () => refresh().click());
+  for (const layout of ["Lista", "Cards"]) {
+    await act(async () => [...document.querySelectorAll('.application-layout-selector button')].find(button => button.textContent === layout).click());
     const ports = [...document.querySelectorAll(".process-port")];
     assert.ok(
       ports.some(
@@ -1221,6 +1316,11 @@ test("Home list and cards show plain port numbers without access links", async (
       ),
     );
     assert.ok(ports.every((port) => !port.querySelector("a, details")));
+    const link = document.querySelector('.applications a[href="https://example.test/app"]');
+    assert.ok(link);
+    assert.equal(link.textContent, "Abrir aplicação");
+    assert.equal(link.target, "_blank");
+    assert.equal(link.rel, "noopener noreferrer");
   }
   await act(async () =>
     [
@@ -1234,6 +1334,9 @@ test("Home list and cards show plain port numbers without access links", async (
   const cardPort = document.querySelector(".application-card .process-port");
   assert.equal(cardPort.querySelector(".font-mono").textContent, "3000");
   assert.equal(cardPort.querySelector("a, details"), null);
+  assert.ok(document.querySelector('.application-card a[href="https://example.test/app"]'));
+  processes.splice(0, processes.length, ...previous.map(row => ({ ...row, projectObservedAt: new Date(Date.now() + 20000).toISOString() })));
+  await act(async () => refresh().click());
   await go("Home");
 });
 
@@ -1480,14 +1583,29 @@ test("logs start with application selection, safely render ANSI and ignore stale
   assert.match(terminal.querySelector(".terminal-color-2").textContent, /Nest/);
   assert.equal(terminal.querySelector("script"), null);
   assert.match(terminal.textContent, /<script>literal<\/script>/);
+  const live = logStreams.at(-1);
+  await act(async () => live.emit("log", { content: "nova saída 🚀\n" }));
+  assert.match(terminal.textContent, /nova saída 🚀/);
+  const pause = [...document.querySelectorAll("#management-panel button")].find(button => button.textContent === "Pausar");
+  await act(async () => pause.click());
+  await act(async () => live.emit("log", { content: "durante pausa\n" }));
+  assert.doesNotMatch(terminal.textContent, /durante pausa/);
+  await act(async () => pause.click());
+  assert.match(terminal.textContent, /durante pausa/);
+  await act(async () => live.emit("logs-error", {}));
+  assert.match(document.querySelector("#management-panel").textContent, /Logs sem conexão/);
+  await act(async () => live.emit("live", {}));
+  assert.match(document.querySelector("#management-panel").textContent, /Logs em tempo real/);
   deferLogs = true;
   await select("archived-app"); await select("web-service");
+  assert.equal(live.readyState, 2);
   await act(async () => pendingLogs.get("web-service")());
   await act(async () => pendingLogs.get("archived-app")());
   assert.match(document.querySelector(".log-terminal").textContent, /web-service/);
   assert.doesNotMatch(document.querySelector(".log-terminal").textContent, /archived-app/);
   deferLogs = false;
   await go("Home");
+  assert.equal(logStreams.at(-1).readyState, 2);
 });
 
 test("terminal parser consumes controls and extended colors without interpreting their parameters", async () => {

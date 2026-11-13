@@ -87,6 +87,8 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(rpc)}; conf.DAEMON_PUB_PORT=${JSON.stringi
       }
       const {
         deployEcosystem,
+        startSelectedProcess,
+        validateStartupProcess,
         getProjectProcesses,
         stopProjectProcesses,
       } = require(
@@ -131,6 +133,33 @@ conf.DAEMON_RPC_PORT=${JSON.stringify(rpc)}; conf.DAEMON_PUB_PORT=${JSON.stringi
       const patched = JSON.parse(await readFile(resolve(directory, "v1", "observed.json"), "utf8"));
       assert.equal(patched.version, "patched-in-place");
       assert.notEqual(patched.pid, previousPid);
+      const originalConfig = await readFile(configs[0], "utf8");
+      // Reproduce KWMS_BLUE receiving the build while script still targets a sibling folder.
+      for (const app of [
+        { name: "isolated-build", script: resolve(directory, "v2", "main.js") },
+        { name: "isolated-build", cwd: resolve(directory, "v2"), script: "./main.js" },
+      ]) {
+        await writeFile(configs[0], `module.exports=${JSON.stringify({ apps: [app] })};`);
+        await assert.rejects(deployEcosystem(configs[0], resolve(directory, "v1")), /fora da pasta publicada/);
+        const unchanged = parsePm2Output((await cli(["jlist"])).stdout).find(row => row.pm2_env.namespace === "default");
+        assert.equal(unchanged.pid, patched.pid, "Invalid publication must not delete the running process");
+      }
+      await writeFile(configs[0], originalConfig);
+      await deployEcosystem(configs[0], resolve(directory, "v1"));
+      assert.equal(JSON.parse(await readFile(resolve(directory, "v1", "observed.json"), "utf8")).version, "patched-in-place");
+      const beforeStartup = parsePm2Output((await cli(["jlist"])).stdout).find(row => row.pm2_env.namespace === "default");
+      await writeFile(configs[0], "module.exports={apps:[{name:'isolated-build',script:'./main.js'},{name:'disabled-app',script:'./missing.js'}]};");
+      await validateStartupProcess(configs[0], resolve(directory, "v1"), "isolated-build", "default");
+      await startSelectedProcess(configs[0], resolve(directory, "v1"), "isolated-build", "default");
+      assert.equal(parsePm2Output((await cli(["jlist"])).stdout).find(row => row.pm2_env.namespace === "default").pid, beforeStartup.pid);
+      await cli(["stop", String(beforeStartup.pm_id)]);
+      await startSelectedProcess(configs[0], resolve(directory, "v1"), "isolated-build", "default");
+      const afterStartup = parsePm2Output((await cli(["jlist"])).stdout);
+      assert.equal(afterStartup.find(row => row.pm2_env.namespace === "default").pm2_env.status, "online");
+      assert.equal(afterStartup.find(row => row.pm2_env.namespace === "other").pid, unrelated.pid);
+      assert.equal(afterStartup.some(row => row.name === "disabled-app"), false);
+      await assert.rejects(validateStartupProcess(configs[0], resolve(directory, "v1"), "isolated-build", "missing"), /não existe no ecosystem/);
+      await writeFile(configs[0], originalConfig);
       const invalid = resolve(directory, "invalid");
       await mkdir(invalid);
       await writeFile(

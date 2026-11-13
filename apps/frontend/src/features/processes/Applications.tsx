@@ -27,6 +27,7 @@ export function Applications({
   busy,
   onAction,
   onLogs,
+  onManage,
   onAdd,
   onLabelSave,
   onProjectEdit,
@@ -39,6 +40,7 @@ export function Applications({
   busy: Process["id"] | null;
   onAction: (process: Process, action: ProcessAction) => void;
   onLogs: (process: Process) => void;
+  onManage: (process: Process) => void;
   onAdd: () => void;
   onLabelSave: SaveProcessLabel;
 } & ProcessProjectActions) {
@@ -131,6 +133,7 @@ export function Applications({
           busy={busy}
           onAction={onAction}
           onLogs={onLogs}
+          onManage={onManage}
         />
       ) : (
         <ProcessCards
@@ -141,6 +144,7 @@ export function Applications({
           busy={busy}
           onAction={onAction}
           onLogs={onLogs}
+          onManage={onManage}
           onAdd={onAdd}
         />
       )}

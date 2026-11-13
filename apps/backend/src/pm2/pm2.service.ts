@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import { ObjectId } from "mongodb";
 import { withProjectConfiguration } from "../projects/project-operations";
 import { processIdentity, processScope, resolveProcessProjects } from "./process-projects";
-import { processLabels, processProjects, projects } from "../common/database";
+import { processLabels, processProjects, processStartup, projects } from "../common/database";
 import type { Pm2Row } from "./pm2-output";
 import { withManualProcessAction } from "../projects/build-progress";
 import { includeUnstartedProcesses } from "./process-inventory";
@@ -27,7 +27,9 @@ export const deployEcosystem = (
 ) => withArtifactAccess(() => deployEcosystemInternal(...args));
 export const processAction = (
   ...args: Parameters<typeof processActionInternal>
-) => withArtifactAccess(() => processActionInternal(...args));
+) => withArtifactAccess(() => args[1] === "delete"
+  ? withProjectConfiguration(() => processActionInternal(...args))
+  : processActionInternal(...args));
 
 const execFileAsync = promisify(execFile);
 export type ProcessAction = "start" | "restart" | "stop" | "delete";
@@ -42,6 +44,9 @@ export interface ProcessView extends ProcessPorts {
   id: number | string;
   startProjectId?: string;
   applicationUrl?: string;
+  autoStart?: boolean;
+  autoStartUpdatedAt?: string | null;
+  autoStartError?: string;
   name: string;
   status: string;
   pid: number;
@@ -101,14 +106,22 @@ async function startEcosystemInternal(rawPath: unknown): Promise<void> {
   await run(["save", "--force"]);
 }
 
-async function deployEcosystemInternal(path: string): Promise<void> {
+export async function startSelectedProcess(path: string, projectRoot: string, name: string, namespace: string) {
+  await deployEcosystemInternal(path, projectRoot, { name, namespace });
+}
+export async function validateStartupProcess(path: string, projectRoot: string, name: string, namespace: string) {
+  await deployEcosystemInternal(path, projectRoot, { name, namespace, validate: true });
+}
+
+async function deployEcosystemInternal(path: string, projectRoot?: string, startup?: { name: string; namespace: string; validate?: boolean }): Promise<void> {
   const extension = extname(__filename);
   const args =
     extension === ".ts" ? ["--require", require.resolve("tsx/cjs")] : [];
   try {
     await execFileAsync(
       process.execPath,
-      [...args, resolve(__dirname, `deploy-worker${extension}`), path],
+      [...args, resolve(__dirname, `deploy-worker${extension}`), path, ...(projectRoot ? [projectRoot] : []),
+        ...(startup ? [startup.validate ? "--validate-selected" : "--start-selected", startup.name, startup.namespace] : [])],
       {
         cwd: dirname(path),
         windowsHide: true,
@@ -127,11 +140,11 @@ async function deployEcosystemInternal(path: string): Promise<void> {
       `Falha ao iniciar a versão no PM2: ${detail || "Operação interrompida ou tempo limite excedido."}`,
     );
   }
-  await run(["save", "--force"]);
+  if (!startup?.validate) await run(["save", "--force"]);
 }
 
 export async function processLogSources(): Promise<
-  Array<{ id: number; name: string; path: string }>
+  Array<{ id: number; name: string; namespace: string; path: string }>
 > {
   const { stdout } = await run(["jlist"]);
   const rows = parsePm2Output(stdout);
@@ -147,6 +160,7 @@ export async function processLogSources(): Promise<
       .map((path) => ({
         id: Number(item.pm_id),
         name: String(item.name),
+        namespace: processIdentity(item).namespace,
         path,
       }));
   });
@@ -257,8 +271,13 @@ export async function setProcessProject(
     await processProjects.updateOne({ scope: processScope(), ...identity }, {
       $set: { projectId: project?._id || null, updatedAt, updatedBy: username },
     }, { upsert: true });
+    await processStartup.updateMany({ scope: processScope(), ...identity, ...(project ? { projectId: { $ne: project._id } } : {}) },
+      { $set: { enabled: false, updatedAt }, $unset: { error: "" } });
+    const startup = await processStartup.findOne({ scope: processScope(), ...identity });
     return { ...identity, projectId: project?._id.toHexString() || null,
       applicationUrl: project?.applicationUrl || "",
+      autoStart: Boolean(startup?.enabled && startup.projectId.equals(project?._id)),
+      autoStartUpdatedAt: startup?.updatedAt.toISOString() || null, autoStartError: startup?.error || "",
       projectName: project?.name || null, projectUpdatedAt: updatedAt.toISOString() };
   });
 }
@@ -281,7 +300,7 @@ export async function listProcesses(): Promise<ProcessView[]> {
       record,
     ]),
   );
-  return includeUnstartedProcesses(rows.map((item, index) => {
+  const result = await includeUnstartedProcesses(rows.map((item, index) => {
     const identity = processIdentity(item);
     const metadata = labels.get(
       JSON.stringify([identity.name, identity.namespace]),
@@ -303,6 +322,12 @@ export async function listProcesses(): Promise<ProcessView[]> {
       version: item.pm2_env?.version ? String(item.pm2_env.version) : null,
     };
   }));
+  const startup = await processStartup.find({ scope: processScope() }).toArray();
+  return result.map(row => {
+    const saved = startup.find(item => item.name === row.name && item.namespace === row.namespace);
+    return { ...row, autoStart: Boolean(saved?.enabled && saved.projectId.toHexString() === row.projectId),
+      autoStartUpdatedAt: saved?.updatedAt.toISOString() || null, autoStartError: saved?.error || "" };
+  });
 }
 
 async function assertExists(id: number) {
@@ -380,6 +405,8 @@ async function processActionInternal(
       throw new HttpError(409, "O processo mudou. Atualize a lista antes de executar a ação.");
   }
   await run([action, String(id)]);
+  if (action === "delete") await processStartup.updateOne({ scope: processScope(), ...processIdentity(row) },
+    { $set: { enabled: false, updatedAt: new Date() }, $unset: { error: "" } });
   if (action !== "delete") await run(["save", "--force"]);
 }
 

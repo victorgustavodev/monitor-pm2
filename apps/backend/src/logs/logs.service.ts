@@ -2,14 +2,18 @@ import { createHash } from "node:crypto";
 import { open } from "node:fs/promises";
 import { logCursors, logs } from "../common/database";
 import { processLogSources } from "../pm2/pm2.service";
+import type { LiveLog } from "./log-stream";
 
-export async function collectProcessLogs() {
+export async function collectProcessLogs(publish?: (row: LiveLog) => void) {
   const sources = await processLogSources();
   const seen = new Set<string>();
   for (const source of sources) {
     if (seen.has(source.path)) continue;
     seen.add(source.path);
-    const file = await open(source.path, "r").catch(() => null);
+    const file = await open(source.path, "r").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
     if (!file) continue;
     try {
       const stat = await file.stat();
@@ -39,14 +43,17 @@ export async function collectProcessLogs() {
           end = bytesRead - end + 1 < length ? end - 1 : bytesRead;
         }
         if (end > 0) {
-          await logs.insertOne({
-            kind: "process",
+          const row = {
+            kind: "process" as const,
             createdAt: new Date(),
             processId: source.id,
             processName: source.name,
+            namespace: source.namespace,
             source: source.path,
             content: buffer.subarray(0, end).toString("utf8"),
-          });
+          };
+          const { insertedId } = await logs.insertOne(row);
+          publish?.({ ...row, _id: insertedId.toHexString() });
           offset += end;
         }
       }
@@ -61,17 +68,18 @@ export async function collectProcessLogs() {
   }
 }
 
-export function startLogCollector() {
+export function startLogCollector(publish?: (row: LiveLog) => void, status?: (ok: boolean) => void) {
   let running: Promise<void> | undefined;
   const collect = () => {
     if (running) return;
-    running = collectProcessLogs()
-      .catch((error) => console.error("Falha ao salvar logs do PM2:", error))
+    running = collectProcessLogs(publish)
+      .then(() => status?.(true))
+      .catch((error) => { status?.(false); console.error("Falha ao salvar logs do PM2:", error); })
       .finally(() => {
         running = undefined;
       });
   };
-  const timer = setInterval(collect, 5000);
+  const timer = setInterval(collect, 1000);
   collect();
   return async () => {
     clearInterval(timer);

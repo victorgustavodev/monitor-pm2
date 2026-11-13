@@ -1,5 +1,7 @@
 import { ProcessProjectDialog } from "../features/processes/components/ProcessProjectDialog";
-import { LogTerminal } from "../components/log-terminal/LogTerminal";
+import { ProcessSettingsDialog } from "../features/processes/components/ProcessSettingsDialog";
+import type { ProcessSettings } from "../features/processes/processes";
+import { ProcessLogTerminal } from "../features/processes";
 import type { ProcessProjectLink } from "../features/processes/processes";
 import { dateLocale } from "../i18n";
 import { t } from "../i18n";
@@ -55,6 +57,9 @@ export function App() {
   const [busy, setBusy] = useState<Process["id"] | null>(null);
   const actionPending = useRef(false);
   const [linkProcess, setLinkProcess] = useState<Process | null>(null);
+  const [managedProcess, setManagedProcess] = useState<Process | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const settingsPending = useRef(false);
   const [projectSaving, setProjectSaving] = useState(false);
   const [labelSaving, setLabelSaving] = useState(false);
   const processDialog = useRef<HTMLDialogElement>(null);
@@ -63,7 +68,7 @@ export function App() {
   const [addingProcess, setAddingProcess] = useState(false);
   const [pickingFile, setPickingFile] = useState(false);
   const [notice, setNotice] = useState("");
-  const [logs, setLogs] = useState<{ name: string; content: string } | null>(
+  const [logs, setLogs] = useState<{ name: string; processName: string; namespace: string } | null>(
     null,
   );
 
@@ -284,21 +289,23 @@ export function App() {
     setSelectedProjectId(id);
     setView("projects");
   }
-  async function showLogs(process: Process) {
-    setBusy(process.id);
+  async function saveProcessSettings(process: Process, autoStart: boolean) {
+    if (settingsPending.current || busy !== null || publication.processesLocked) throw new Error(t("Aguarde a conclusão da operação em andamento."));
+    settingsPending.current = true; setSettingsSaving(true); setBusy(process.id);
     try {
-      const data = await api<{ logs: string }>(
-        `/api/processes/${process.id}/logs?lines=150`,
-      );
-      setLogs({
-        name: process.label || process.name,
-        content: data.logs || t("Nenhum log disponível."),
+      const saved = await api<ProcessSettings>(`/api/processes/${encodeURIComponent(process.id)}/settings`, {
+        method: "PUT", body: JSON.stringify({ name: process.name, namespace: process.namespace || "default", autoStart }),
       });
+      setProcesses(rows => rows.map(row => row.name === saved.name && (row.namespace || "default") === saved.namespace
+        ? { ...row, autoStart: saved.autoStart, autoStartUpdatedAt: saved.autoStartUpdatedAt, autoStartError: saved.autoStartError } : row));
+      setNotice(t("Configurações do processo salvas."));
     } catch (reason) {
-      setError((reason as Error).message);
-    } finally {
-      setBusy(null);
-    }
+      if (reason instanceof ApiError && reason.status === 401) sessionExpired();
+      throw reason;
+    } finally { settingsPending.current = false; setSettingsSaving(false); setBusy(null); }
+  }
+  function showLogs(process: Process) {
+    setLogs({ name: process.label || process.name, processName: process.name, namespace: process.namespace || "default" });
   }
   async function selectEcosystem() {
     setPickingFile(true);
@@ -381,20 +388,16 @@ export function App() {
         onNavigate={setView}
         username={username}
         count={processes.length}
-        busy={managementBusy || loggingOut || labelSaving || projectSaving || addingProcess || pickingFile || actionPending.current}
+        busy={managementBusy || loggingOut || labelSaving || projectSaving || settingsSaving || addingProcess || pickingFile || actionPending.current}
         onLogout={logout}
       />
       <main key={view} id="dashboard-main" className="dashboard-content page-enter" tabIndex={-1}>
-        <header className="dashboard-page-header">
-          <div>
-            <p className="page-eyebrow">MONITOR PM2</p>
-            <h1>
+        <h1 className="sr-only">
               {view === "home"
                 ? t("Olá, {0}", { 0: username })
                 : t(currentView.label)}
-            </h1>
-            <p className="page-description">{t(currentView.description)}</p>
-          </div>
+        </h1>
+        {["home", "settings"].includes(view) && <header className="dashboard-page-header">
           <div className="page-actions">
             {["home", "settings"].includes(view) && (
               <button
@@ -423,7 +426,7 @@ export function App() {
               </button>
             )}
           </div>
-        </header>
+        </header>}
         <div className="dashboard-sync" aria-live="off">
           <span
             className={`sync-dot ${connected ? "bg-success" : loading ? "bg-warning" : "bg-danger"}`}
@@ -480,6 +483,7 @@ export function App() {
               busy={publication.processesLocked ? -1 : busy}
               onAction={act}
               onLogs={showLogs}
+              onManage={setManagedProcess}
               onAdd={openAddProcess}
             />
           </Home>
@@ -517,6 +521,8 @@ export function App() {
         )}
       </main>
       <BuildProgressPanel publication={publication} />
+      {managedProcess && <ProcessSettingsDialog process={managedProcess} busy={settingsSaving} locked={publication.processesLocked}
+        onSave={saveProcessSettings} onClose={() => setManagedProcess(null)} onSessionExpired={sessionExpired} onOpenProject={openProject} />}
       {confirmation && <ProcessActionConfirmation process={confirmation.process} action={confirmation.action}
         locked={publication.processesLocked || busy !== null}
         onConfirm={() => executeAction(confirmation.process, confirmation.action)} onClose={() => setConfirmation(null)} />}
@@ -643,7 +649,7 @@ export function App() {
                 <X size={18} />
               </button>
             </header>
-            <LogTerminal content={logs.content} label={t("Logs de {0}", { 0: logs.name })} />
+            <ProcessLogTerminal key={`${logs.processName}:${logs.namespace}`} name={logs.processName} namespace={logs.namespace} onSessionExpired={sessionExpired} />
           </section>
         </div>
       )}

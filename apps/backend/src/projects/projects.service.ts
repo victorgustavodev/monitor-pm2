@@ -6,6 +6,7 @@ import {
   projectBuilds,
   processProjects,
   processInventory,
+  processStartup,
   type ProjectRecord,
 } from "../common/database";
 import { HttpError } from "../common/http-error";
@@ -219,7 +220,10 @@ export async function updateProject(
         current.applicationUrl || "",
       );
       const rootChanged = current.rootKey !== fields.rootKey;
-      if (rootChanged) await processInventory.deleteMany({ projectId: id });
+      if (rootChanged) {
+        await processInventory.deleteMany({ projectId: id });
+        await processStartup.updateMany({ projectId: id }, { $set: { enabled: false, updatedAt: new Date() }, $unset: { error: "" } });
+      }
       await mkdir(fields.rootPath, { recursive: true });
       await projects.updateOne(
         { _id: id },
@@ -305,6 +309,7 @@ export async function deleteProject(
         $set: { projectId: null, updatedAt: new Date() },
       });
       await processInventory.deleteMany({ projectId: id });
+      await processStartup.deleteMany({ projectId: id });
       await projects.deleteOne({ _id: id });
     }),
   ));

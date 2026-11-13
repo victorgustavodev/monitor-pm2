@@ -5,14 +5,15 @@ import type { Project } from "../types";
 
 type EnvironmentFile = { name: string; content: string; revision: string | null; names?: string[] };
 
-export function ProjectEnvironmentFiles({ project, busy, onBusyChange, onSessionExpired }: {
+export function ProjectEnvironmentFiles({ project, busy, onBusyChange, onSessionExpired, configFile }: {
   project: Project;
   busy: boolean;
   onBusyChange: (busy: boolean) => void;
   onSessionExpired: () => void;
+  configFile?: string;
 }) {
   const [name, setName] = useState(".env");
-  const [openedName, setOpenedName] = useState(".env");
+  const [openedName, setOpenedName] = useState(configFile || ".env");
   const [file, setFile] = useState<EnvironmentFile | null>(null);
   const [names, setNames] = useState<string[]>([]);
   const [content, setContent] = useState("");
@@ -72,25 +73,25 @@ export function ProjectEnvironmentFiles({ project, busy, onBusyChange, onSession
   }
   return <section className="project-form-card project-details">
     <div className="project-section-heading"><div>
-      <h2>{t("Arquivos .env")}</h2>
-      <p>{t("Edite ou crie arquivos .env na raiz do projeto. Salvar não reinicia a aplicação.")}</p>
+      <h2>{configFile || t("Arquivos .env")}</h2>
+      <p>{t(configFile ? "Edite o ecosystem local. Salvar não reinicia a aplicação; publique novamente para aplicar." : "Edite ou crie arquivos .env na raiz do projeto. Salvar não reinicia a aplicação.")}</p>
     </div></div>
-    <form className="project-form" onSubmit={openFile}>
+    {!configFile ? <form className="project-form" onSubmit={openFile}>
       <label>{t("Nome do arquivo de ambiente")}
         <input name="environmentFileName" list="project-environment-files" value={name} onChange={event => setName(event.target.value)} required maxLength={128} pattern="\.env(\.[a-zA-Z0-9_\-][a-zA-Z0-9._\-]*)?" disabled={locked} />
         <datalist id="project-environment-files">{[...new Set([".env", ...names])].map(value => <option key={value} value={value} />)}</datalist>
         <small>{t("Use .env ou um nome como .env.production, na raiz do projeto.")}</small>
       </label>
       <div className="project-form-actions"><button className="project-button secondary" disabled={locked}>{t("Abrir / recarregar arquivo")}</button></div>
-    </form>
+    </form> : <button type="button" className="project-button secondary" disabled={locked} onClick={() => setRevision(value => value + 1)}>{t("Abrir / recarregar arquivo")}</button>}
     {loading && <p role="status" className="project-message">{t("Carregando arquivo de ambiente…")}</p>}
     {error && <p role="alert" className="project-message error">{error}</p>}
     {notice && <p role="status" className="project-message success">{notice}</p>}
     {file && <form className="project-form" onSubmit={save}>
       <label>{file.name}
-        <textarea name="environmentContent" rows={12} value={content} onChange={event => setContent(event.target.value)} maxLength={32768} disabled={locked} spellCheck={false} className="project-pm2-code" />
+        <textarea name={configFile ? "ecosystemContent" : "environmentContent"} rows={12} value={content} onChange={event => setContent(event.target.value)} maxLength={configFile ? 16384 : 32768} disabled={locked} spellCheck={false} className="project-pm2-code" />
         <small>{file.revision === null ? t("Arquivo ainda não existe. Ele será criado ao salvar.") : t("Alterações serão gravadas no arquivo da pasta do projeto.")}</small>
-        <small>{t("Texto UTF-8, até 32 KB. O conteúdo não é executado pelo monitor.")}</small>
+        <small>{t(configFile ? "Configuração CommonJS, até 16 KB. A sintaxe é validada sem executar o arquivo ao salvar." : "Texto UTF-8, até 32 KB. O conteúdo não é executado pelo monitor.")}</small>
       </label>
       <div className="project-form-actions"><button className="project-button" disabled={locked || (file.revision !== null && file.content === content)}>{saving ? t("Salvando…") : t("Salvar arquivo de ambiente")}</button></div>
     </form>}

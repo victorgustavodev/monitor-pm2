@@ -49,11 +49,9 @@ export function ProjectEnvironment({ project, busy, onSave, onBusyChange, onSess
     {loading ? <p role="status" className="project-message">{t("Verificando configuração local…")}</p>
       : error ? <p role="alert" className="project-message error">{error}</p>
       : file ? <>
-        <p role="status" className="project-message">{t("O ecosystem existente é preservado em todas as publicações. Para alterar suas variáveis, edite o arquivo na pasta do projeto e publique novamente.")}</p>
-        {file.type === "file" && !file.binary ? <div className="repository-preview">
-          <pre aria-label={t("Configuração local (somente leitura)")}>{file.content}</pre>
-          {file.truncated && <p className="project-form-note">{t("Visualização parcial do arquivo.")}</p>}
-        </div> : <p role="alert" className="project-message error">{t("O caminho da configuração PM2 deve ser um arquivo de texto.")}</p>}
+        {file.type === "file" && !file.binary ? <ProjectEnvironmentFiles key={project.pm2ConfigPath} project={project} busy={busy}
+          configFile={project.pm2ConfigPath} onBusyChange={onBusyChange} onSessionExpired={onSessionExpired} />
+          : <p role="alert" className="project-message error">{t("O caminho da configuração PM2 deve ser um arquivo de texto.")}</p>}
       </> : <>
         <p role="status" className="project-message">{t("Nenhum ecosystem encontrado na pasta do projeto. Salve a configuração abaixo para usá-la na próxima publicação.")}</p>
         <form className="project-form" onSubmit={save}>

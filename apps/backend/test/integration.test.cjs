@@ -534,7 +534,11 @@ test("network access, MongoDB authentication, builds, deployment and persisted l
     "persists audit and incremental process logs across collector restarts and file truncation",
     async () => {
       const { collectProcessLogs } = backend("logs/logs.service");
-      await collectProcessLogs();
+      const live = [];
+      await collectProcessLogs(row => live.push(row));
+      assert.equal(live.length, 1);
+      assert.equal(live[0].content, "primeiro log\n");
+      assert.match(live[0]._id, /^[a-f0-9]{24}$/);
       assert.equal(await db.logs.countDocuments({ kind: "process" }), 1);
       await collectProcessLogs();
       assert.equal(await db.logs.countDocuments({ kind: "process" }), 1);
@@ -572,6 +576,24 @@ test("network access, MongoDB authentication, builds, deployment and persisted l
       assert.equal(archived.length, 3);
       assert.equal((await request("/api/logs?limit=NaN")).status, 400);
       assert.equal((await request("/api/logs?kind=other")).status, 400);
+      assert.equal((await fetch(origin + "/api/logs/stream?processName=app")).status, 401);
+      assert.equal((await request("/api/logs/stream")).status, 400);
+      const controller = new AbortController();
+      try {
+        const name = output[0].processName;
+        const stream = await request(`/api/logs/stream?processName=${encodeURIComponent(name)}&namespace=default`, { signal: controller.signal });
+        assert.equal(stream.headers.get("content-encoding"), null);
+        assert.match(stream.headers.get("content-type"), /text\/event-stream/);
+        const reader = stream.body.getReader();
+        let frames = "";
+        while (!frames.includes("event: snapshot")) {
+          const { value, done } = await reader.read();
+          assert.equal(done, false);
+          frames += Buffer.from(value).toString("utf8");
+        }
+        assert.match(frames, /primeiro log/);
+        await reader.cancel();
+      } finally { controller.abort(); }
     },
   );
 

@@ -18,6 +18,7 @@ export interface LogRecord {
   status?: number;
   processId?: number;
   processName?: string;
+  namespace?: string;
   source?: string;
   content?: string;
 }
@@ -67,6 +68,18 @@ export interface ProcessInventoryRecord {
   name: string;
   namespace: string;
   projectId: ObjectId;
+}
+
+export interface ProcessStartupRecord {
+  scope: string;
+  name: string;
+  namespace: string;
+  projectId: ObjectId;
+  enabled: boolean;
+  updatedAt: Date;
+  updatedBy: string;
+  lastAttemptAt?: Date;
+  error?: string;
 }
 
 export interface ProjectRecord {
@@ -123,6 +136,7 @@ export const processLabels =
   db.collection<ProcessLabelRecord>("process_labels");
 export const processProjects = db.collection<ProcessProjectRecord>("process_projects");
 export const processInventory = db.collection<ProcessInventoryRecord>("process_inventory");
+export const processStartup = db.collection<ProcessStartupRecord>("process_startup");
 export const projects = db.collection<ProjectRecord>("projects");
 export const projectBuilds =
   db.collection<ProjectBuildRecord>("project_builds");
@@ -157,6 +171,7 @@ export async function connectDatabase() {
     processProjects.createIndex({ scope: 1, name: 1, namespace: 1 }, { unique: true }),
     processProjects.createIndex({ projectId: 1 }),
     processInventory.createIndex({ scope: 1, name: 1, namespace: 1 }, { unique: true }),
+    processStartup.createIndex({ scope: 1, name: 1, namespace: 1 }, { unique: true }),
     projects.createIndex({ nameKey: 1 }, { unique: true }),
     projects.createIndex({ rootKey: 1 }, { unique: true }),
     projectBuilds.createIndex({ projectId: 1, nameKey: 1 }, { unique: true }),
